@@ -1,0 +1,9 @@
+name: provectus_task
+channels:
+  - defaults
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip=26.0.1
+  - pip:
+      - -r requirements.txt
