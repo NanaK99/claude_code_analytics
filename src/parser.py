@@ -1,13 +1,5 @@
 from typing import Optional, Tuple
 
-_DISPATCH = {
-    "claude_code.user_prompt":   "_parse_user_prompt",
-    "claude_code.api_request":   "_parse_api_request",
-    "claude_code.tool_decision": "_parse_tool_decision",
-    "claude_code.tool_result":   "_parse_tool_result",
-    "claude_code.api_error":     "_parse_api_error",
-}
-
 
 def parse_event(
     body: str, attrs: dict, line_num: int, event_idx: int
@@ -17,11 +9,11 @@ def parse_event(
     Returns (table_name, row_dict) or None if the event type is unknown.
     Raises ValueError with location info if a required field is missing or invalid.
     """
-    handler_name = _DISPATCH.get(body)
-    if handler_name is None:
+    handler = _DISPATCH.get(body)
+    if handler is None:
         return None
     try:
-        return globals()[handler_name](attrs)
+        return handler(attrs)
     except (KeyError, ValueError) as exc:
         raise ValueError(
             f"Line {line_num} (event index {event_idx}): "
@@ -34,7 +26,7 @@ def _base(attrs: dict) -> dict:
         "session_id":    attrs["session.id"],
         "user_email":    attrs["user.email"],
         "timestamp":     attrs["event.timestamp"],
-        "terminal_type": attrs.get("terminal.type"),
+        "terminal_type": attrs["terminal.type"],
     }
 
 
@@ -92,3 +84,13 @@ def _parse_api_error(attrs: dict) -> Tuple[str, dict]:
         "duration_ms": int(attrs["duration_ms"]),
     })
     return "api_errors", row
+
+
+# _DISPATCH defined AFTER all handler functions
+_DISPATCH = {
+    "claude_code.user_prompt":   _parse_user_prompt,
+    "claude_code.api_request":   _parse_api_request,
+    "claude_code.tool_decision": _parse_tool_decision,
+    "claude_code.tool_result":   _parse_tool_result,
+    "claude_code.api_error":     _parse_api_error,
+}
