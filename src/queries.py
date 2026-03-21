@@ -89,8 +89,10 @@ def get_cost_by_level_over_time(conn, filters: dict) -> pd.DataFrame:
 def get_token_breakdown(conn, filters: dict) -> pd.DataFrame:
     w = _where(filters, "ar.timestamp")
     row = conn.execute(f"""
-        SELECT SUM(input_tokens), SUM(output_tokens),
-               SUM(cache_read_tokens), SUM(cache_creation_tokens)
+        SELECT COALESCE(SUM(input_tokens), 0),
+               COALESCE(SUM(output_tokens), 0),
+               COALESCE(SUM(cache_read_tokens), 0),
+               COALESCE(SUM(cache_creation_tokens), 0)
         FROM api_requests ar JOIN employees e ON ar.user_email = e.email {w}
     """).fetchone()
     return pd.DataFrame({
@@ -197,7 +199,7 @@ def get_business_hours_split(conn, filters: dict) -> pd.DataFrame:
     return _df(conn, f"""
         SELECT
             CASE WHEN EXTRACT(hour FROM up.timestamp) BETWEEN 9 AND 17
-                 THEN 'Business Hours (9-17)'
+                 THEN 'Business Hours (9–17)'
                  ELSE 'After Hours'
             END AS category,
             COUNT(DISTINCT up.session_id) AS session_count

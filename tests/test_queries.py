@@ -112,3 +112,90 @@ def test_empty_result_when_no_matching_location(conn):
     filters = {**ALL_FILTERS, "locations": ["Canada"]}
     result = get_kpi_metrics(conn, filters)
     assert result["total_sessions"] == 0
+
+
+def test_get_cost_by_practice_over_time(conn):
+    df = get_cost_by_practice_over_time(conn, ALL_FILTERS)
+    assert isinstance(df, pd.DataFrame)
+    assert set(df.columns) >= {"date", "practice", "total_cost"}
+    assert len(df) > 0
+
+
+def test_get_cost_by_level_over_time(conn):
+    df = get_cost_by_level_over_time(conn, ALL_FILTERS)
+    assert isinstance(df, pd.DataFrame)
+    assert set(df.columns) >= {"date", "level", "total_cost"}
+    assert len(df) > 0
+
+
+def test_get_token_breakdown(conn):
+    df = get_token_breakdown(conn, ALL_FILTERS)
+    assert list(df["token_type"]) == ["Input", "Output", "Cache Read", "Cache Creation"]
+    assert df["total"].notna().all()
+    # alice: input=100+50=150, output=200+100=300; bob: input=0, output=300
+    assert df.loc[df["token_type"] == "Input", "total"].values[0] == 150
+
+
+def test_get_token_breakdown_empty(conn):
+    # No data for this location — should return zeros, not NULLs
+    filters = {**ALL_FILTERS, "locations": ["Canada"]}
+    df = get_token_breakdown(conn, filters)
+    assert df["total"].notna().all()
+    assert (df["total"] == 0).all()
+
+
+def test_get_model_distribution(conn):
+    df = get_model_distribution(conn, ALL_FILTERS)
+    assert set(df.columns) >= {"model", "call_count", "total_cost"}
+    assert set(df["model"]) == {"claude-sonnet-4-6", "claude-haiku-4-5-20251001", "claude-opus-4-6"}
+
+
+def test_get_cache_hit_rate(conn):
+    # cache_read_tokens: 500 (alice row 1) + 1000 (bob)
+    # total denominator: (100+500+0) + (50+0+0) + (0+1000+0) = 600+50+1000 = 1650
+    rate = get_cache_hit_rate(conn, ALL_FILTERS)
+    assert isinstance(rate, float)
+    assert rate == pytest.approx(1500 / 1650, rel=1e-3)
+
+
+def test_get_cache_hit_rate_empty(conn):
+    filters = {**ALL_FILTERS, "locations": ["Canada"]}
+    rate = get_cache_hit_rate(conn, filters)
+    assert rate == 0.0
+
+
+def test_get_usage_by_level(conn):
+    df = get_usage_by_level(conn, ALL_FILTERS)
+    assert set(df.columns) >= {"level", "session_count"}
+    assert set(df["level"]) <= {"L5", "L3"}
+
+
+def test_get_usage_by_location(conn):
+    df = get_usage_by_location(conn, ALL_FILTERS)
+    assert set(df.columns) >= {"location", "session_count"}
+    assert set(df["location"]) <= {"Germany", "Poland"}
+
+
+def test_get_day_of_week_counts(conn):
+    df = get_day_of_week_counts(conn, ALL_FILTERS)
+    assert set(df.columns) >= {"day_of_week", "session_count"}
+    assert len(df) > 0
+
+
+def test_get_business_hours_split(conn):
+    df = get_business_hours_split(conn, ALL_FILTERS)
+    assert "category" in df.columns
+    assert "session_count" in df.columns
+    # bob's session is at hour 20 (after hours), alice's is at hour 10 (business hours)
+    biz = df.loc[df["category"] == "Business Hours (9\u201317)", "session_count"].values[0]
+    after = df.loc[df["category"] == "After Hours", "session_count"].values[0]
+    assert biz == 1
+    assert after == 1
+
+
+def test_get_tool_execution_time(conn):
+    df = get_tool_execution_time(conn, ALL_FILTERS)
+    assert set(df.columns) >= {"tool_name", "avg_duration_ms"}
+    read_avg = df.loc[df["tool_name"] == "Read", "avg_duration_ms"].values[0]
+    # tool_results: Read row 1 = 61ms, Read row 2 = 120ms → avg = 90.5ms
+    assert read_avg == pytest.approx(90.5, rel=1e-3)
