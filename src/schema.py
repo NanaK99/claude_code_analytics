@@ -8,71 +8,71 @@ def init_db(conn) -> None:
     conn.execute("""
         CREATE TABLE employees (
             email         TEXT PRIMARY KEY,
-            full_name     TEXT,
-            practice      TEXT,
-            level         TEXT,
-            location      TEXT
+            full_name     TEXT NOT NULL,
+            practice      TEXT NOT NULL,
+            level         TEXT NOT NULL,
+            location      TEXT NOT NULL
         )
     """)
     conn.execute("""
         CREATE TABLE user_prompts (
-            session_id    TEXT,
-            user_email    TEXT,
-            timestamp     TIMESTAMP,
-            prompt_length INTEGER,
-            terminal_type TEXT
+            session_id    TEXT      NOT NULL,
+            user_email    TEXT      NOT NULL,
+            timestamp     TIMESTAMP NOT NULL,
+            prompt_length INTEGER   NOT NULL,
+            terminal_type TEXT      NOT NULL
         )
     """)
     conn.execute("""
         CREATE TABLE api_requests (
-            session_id            TEXT,
-            user_email            TEXT,
-            timestamp             TIMESTAMP,
-            model                 TEXT,
-            input_tokens          INTEGER,
-            output_tokens         INTEGER,
-            cache_read_tokens     INTEGER,
-            cache_creation_tokens INTEGER,
-            cost_usd              DOUBLE,
-            duration_ms           INTEGER,
-            terminal_type         TEXT
+            session_id            TEXT      NOT NULL,
+            user_email            TEXT      NOT NULL,
+            timestamp             TIMESTAMP NOT NULL,
+            model                 TEXT      NOT NULL,
+            input_tokens          INTEGER   NOT NULL,
+            output_tokens         INTEGER   NOT NULL,
+            cache_read_tokens     INTEGER   NOT NULL,
+            cache_creation_tokens INTEGER   NOT NULL,
+            cost_usd              DOUBLE    NOT NULL,
+            duration_ms           INTEGER   NOT NULL,
+            terminal_type         TEXT      NOT NULL
         )
     """)
     conn.execute("""
         CREATE TABLE tool_decisions (
-            session_id    TEXT,
-            user_email    TEXT,
-            timestamp     TIMESTAMP,
-            tool_name     TEXT,
-            decision      TEXT,
-            source        TEXT,
-            terminal_type TEXT
+            session_id    TEXT      NOT NULL,
+            user_email    TEXT      NOT NULL,
+            timestamp     TIMESTAMP NOT NULL,
+            tool_name     TEXT      NOT NULL,
+            decision      TEXT      NOT NULL,
+            source        TEXT      NOT NULL,
+            terminal_type TEXT      NOT NULL
         )
     """)
     conn.execute("""
         CREATE TABLE tool_results (
-            session_id          TEXT,
-            user_email          TEXT,
-            timestamp           TIMESTAMP,
-            tool_name           TEXT,
-            decision_type       TEXT,
-            decision_source     TEXT,
-            success             BOOLEAN,
-            duration_ms         INTEGER,
+            session_id          TEXT      NOT NULL,
+            user_email          TEXT      NOT NULL,
+            timestamp           TIMESTAMP NOT NULL,
+            tool_name           TEXT      NOT NULL,
+            decision_type       TEXT      NOT NULL,
+            decision_source     TEXT      NOT NULL,
+            success             BOOLEAN   NOT NULL,
+            duration_ms         INTEGER   NOT NULL,
             result_size_bytes   INTEGER,
-            terminal_type       TEXT
+            terminal_type       TEXT      NOT NULL
         )
     """)
     conn.execute("""
         CREATE TABLE api_errors (
-            session_id    TEXT,
-            user_email    TEXT,
-            timestamp     TIMESTAMP,
-            model         TEXT,
-            error         TEXT,
-            status_code   TEXT,
-            attempt       INTEGER,
-            duration_ms   INTEGER,
-            terminal_type TEXT
+            session_id    TEXT      NOT NULL,
+            user_email    TEXT      NOT NULL,
+            timestamp     TIMESTAMP NOT NULL,
+            model         TEXT      NOT NULL,
+            error         TEXT      NOT NULL,
+            status_code   TEXT      NOT NULL,
+            attempt       INTEGER   NOT NULL,
+            duration_ms   INTEGER   NOT NULL,
+            terminal_type TEXT      NOT NULL
         )
     """)
