@@ -12,18 +12,16 @@ EMPLOYEES_PATH = "data_generation/output/employees.csv"
 DB_PATH = "db/analytics.duckdb"
 
 _TABLES = ["user_prompts", "api_requests", "tool_decisions", "tool_results", "api_errors"]
+_ALLOWED_TABLES = set(_TABLES)
 
 
-def _flush(conn, table_name: str, rows: list) -> None:
+def _flush(conn, table_name: str, rows: list, col_order: list) -> None:
+    if table_name not in _ALLOWED_TABLES:
+        raise ValueError(f"Unknown table: {table_name!r}")
     if not rows:
         return
     df = pd.DataFrame(rows)
-    # Get table column order from schema and select explicitly to avoid column mismatch
-    cols = conn.execute(
-        f"SELECT column_name FROM information_schema.columns "
-        f"WHERE table_name = '{table_name}' ORDER BY ordinal_position"
-    ).fetchall()
-    col_list = ", ".join(c[0] for c in cols)
+    col_list = ", ".join(col_order)
     conn.execute(f"INSERT INTO {table_name} SELECT {col_list} FROM df")
 
 
@@ -34,7 +32,16 @@ def run_ingest(
 ) -> dict:
     # Load employees — DuckDB references the local `emp_df` variable by name
     emp_df = pd.read_csv(employees_path)
-    conn.execute("INSERT INTO employees SELECT * FROM emp_df")
+    conn.execute("INSERT INTO employees SELECT email, full_name, practice, level, location FROM emp_df")
+
+    _col_order = {}
+    for table in _TABLES:
+        cols = conn.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = ? ORDER BY ordinal_position",
+            [table]
+        ).fetchall()
+        _col_order[table] = [c[0] for c in cols]
 
     buffers = {t: [] for t in _TABLES}
     counts = {"ingested": 0, "malformed": 0, "missing_fields": 0, "unknown_types": 0}
@@ -54,7 +61,9 @@ def run_ingest(
                     event = json.loads(log_event["message"])
                 except (json.JSONDecodeError, KeyError):
                     counts["missing_fields"] += 1
-                    error_lines["missing_fields"].append(f"{line_num}:{event_idx}")
+                    error_lines["missing_fields"].append(
+                        f"Line {line_num} (event index {event_idx}): failed to parse message JSON"
+                    )
                     continue
 
                 body = event.get("body")
@@ -85,11 +94,11 @@ def run_ingest(
                 counts["ingested"] += 1
 
                 if len(buffers[table_name]) >= CHUNK_SIZE:
-                    _flush(conn, table_name, buffers[table_name])
+                    _flush(conn, table_name, buffers[table_name], _col_order[table_name])
                     buffers[table_name] = []
 
     for table_name, rows in buffers.items():
-        _flush(conn, table_name, rows)
+        _flush(conn, table_name, rows, _col_order[table_name])
 
     _print_summary(counts, error_lines)
     return counts
