@@ -36,6 +36,14 @@ cleanup() {
 
 trap cleanup EXIT INT TERM
 
+# Load .env if present
+if [[ -f ".env" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source .env
+  set +a
+fi
+
 echo "Starting FastAPI on http://${API_HOST}:${API_PORT}"
 "${CONDA_CMD}" run -n "${ENV_NAME}" uvicorn api:app --reload --host "${API_HOST}" --port "${API_PORT}" &
 api_pid=$!
@@ -44,4 +52,7 @@ echo "Starting Streamlit on http://${STREAMLIT_HOST}:${STREAMLIT_PORT}"
 "${CONDA_CMD}" run -n "${ENV_NAME}" streamlit run app.py --server.address "${STREAMLIT_HOST}" --server.port "${STREAMLIT_PORT}" &
 streamlit_pid=$!
 
-wait -n "${api_pid}" "${streamlit_pid}"
+# wait -n is bash 4.3+ only; macOS ships bash 3.2 — poll both PIDs instead
+while kill -0 "${api_pid}" 2>/dev/null && kill -0 "${streamlit_pid}" 2>/dev/null; do
+  sleep 1
+done
