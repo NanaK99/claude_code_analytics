@@ -92,3 +92,19 @@ def test_wrong_api_key_returns_403(client):
         headers={"X-API-Key": "wrong-key"},
     )
     assert resp.status_code == 403
+
+
+# ── Lifespan guard test ───────────────────────────────────────────────────────
+
+def test_lifespan_raises_if_db_missing(monkeypatch):
+    """Lifespan must refuse to start when DB file does not exist."""
+    monkeypatch.setenv("API_KEY", API_KEY)
+    monkeypatch.setenv("DB_PATH", "/nonexistent/path/analytics.duckdb")
+    import src.api.main as main_mod
+    monkeypatch.setattr(main_mod, "DB_PATH", "/nonexistent/path/analytics.duckdb")
+    from src.api.main import app
+
+    # Do NOT mock Path — let the real check run against a nonexistent path
+    with pytest.raises(Exception):
+        with TestClient(app):
+            pass  # lifespan should raise before we get here
