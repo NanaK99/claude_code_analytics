@@ -124,6 +124,48 @@ def get_daily_sessions(conn, filters: dict) -> pd.DataFrame:
     """)
 
 
+def get_session_kpis(conn, filters: dict) -> dict:
+    # avg_duration_mins from api_requests (multiple rows per session give non-zero spreads)
+    w_ar = _where(filters, "ar.timestamp")
+    dur_row = conn.execute(f"""
+        SELECT AVG(session_dur)
+        FROM (
+            SELECT ar.session_id,
+                   EXTRACT(epoch FROM (MAX(ar.timestamp) - MIN(ar.timestamp))) / 60.0 AS session_dur
+            FROM api_requests ar JOIN employees e ON ar.user_email = e.email
+            {w_ar}
+            GROUP BY ar.session_id
+        ) sub
+    """).fetchone()
+
+    # avg_prompts_per_session from user_prompts
+    w_up = _where(filters, "up.timestamp")
+    prompts_row = conn.execute(f"""
+        SELECT COUNT(*) * 1.0 / NULLIF(COUNT(DISTINCT session_id), 0)
+        FROM user_prompts up JOIN employees e ON up.user_email = e.email
+        {w_up}
+    """).fetchone()
+
+    return {
+        "avg_duration_mins":      float(dur_row[0] or 0),
+        "avg_prompts_per_session": float(prompts_row[0] or 0),
+    }
+
+
+# Pricing: claude-sonnet-4-6 input = $3.00/MTok, cache_read = $0.30/MTok
+# Applied uniformly across all models as a stated approximation.
+_CACHE_SAVINGS_PER_TOKEN = (3.00 - 0.30) / 1_000_000  # $2.70 per MTok
+
+
+def get_cache_savings(conn, filters: dict) -> float:
+    w = _where(filters, "ar.timestamp")
+    row = conn.execute(f"""
+        SELECT COALESCE(SUM(cache_read_tokens), 0)
+        FROM api_requests ar JOIN employees e ON ar.user_email = e.email {w}
+    """).fetchone()
+    return float(row[0] or 0) * _CACHE_SAVINGS_PER_TOKEN
+
+
 # ── Cost & Tokens ─────────────────────────────────────────────────────────────
 
 def get_cost_by_practice_over_time(conn, filters: dict) -> pd.DataFrame:

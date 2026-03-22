@@ -255,3 +255,22 @@ def test_where_date_start_after_date_end_raises():
     f["date_end"]   = "2025-12-01"
     with pytest.raises(ValidationError):
         _where(f, "up.timestamp")
+
+
+from src.queries import get_session_kpis, get_cache_savings
+
+def test_get_session_kpis(conn):
+    result = get_session_kpis(conn, ALL_FILTERS)
+    assert isinstance(result, dict)
+    assert "avg_duration_mins" in result
+    assert "avg_prompts_per_session" in result
+    # 2 prompts across 2 sessions
+    assert result["avg_prompts_per_session"] == pytest.approx(1.0, rel=1e-3)
+    # s1 api_requests: 10:00 and 10:05 → 5 min span; s2 has one row → 0 min; AVG = 2.5
+    assert result["avg_duration_mins"] == pytest.approx(2.5, rel=1e-2)
+
+def test_get_cache_savings(conn):
+    result = get_cache_savings(conn, ALL_FILTERS)
+    assert isinstance(result, float)
+    # total cache_read_tokens = 500 + 0 + 1000 = 1500; 1500 × 2.70 / 1e6 = 0.00405
+    assert result == pytest.approx(0.00405, rel=1e-3)
