@@ -146,8 +146,6 @@ def test_invalid_date_range_returns_422(client):
     assert resp.status_code == 422
 
 
-# ── Lifespan guard test ───────────────────────────────────────────────────────
-
 # ── Costs router ──────────────────────────────────────────────────────────────
 
 def test_costs_by_practice(client):

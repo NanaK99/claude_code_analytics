@@ -6,6 +6,8 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from src.api.routers import overview, costs, team, activity, tools, sessions
+
 DB_PATH = os.getenv("DB_PATH", "db/analytics.duckdb")
 
 
@@ -35,23 +37,10 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 
-# Routers registered in Tasks 6-11
-# Auth is enforced via dependencies=[Depends(verify_api_key)] on each router's APIRouter()
-
-from src.api.routers import overview
+# Auth is enforced via dependencies=[Depends(verify_api_key)] on each router's APIRouter().
 app.include_router(overview.router, prefix="/api/v1")
-
-from src.api.routers import costs
 app.include_router(costs.router, prefix="/api/v1")
-
-from src.api.routers import team
 app.include_router(team.router, prefix="/api/v1")
-
-from src.api.routers import activity
 app.include_router(activity.router, prefix="/api/v1")
-
-from src.api.routers import tools
 app.include_router(tools.router, prefix="/api/v1")
-
-from src.api.routers import sessions
 app.include_router(sessions.router, prefix="/api/v1")
