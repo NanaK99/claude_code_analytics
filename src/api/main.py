@@ -40,3 +40,18 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
 
 from src.api.routers import overview
 app.include_router(overview.router, prefix="/api/v1")
+
+from src.api.routers import costs
+app.include_router(costs.router, prefix="/api/v1")
+
+from src.api.routers import team
+app.include_router(team.router, prefix="/api/v1")
+
+from src.api.routers import activity
+app.include_router(activity.router, prefix="/api/v1")
+
+from src.api.routers import tools
+app.include_router(tools.router, prefix="/api/v1")
+
+from src.api.routers import sessions
+app.include_router(sessions.router, prefix="/api/v1")

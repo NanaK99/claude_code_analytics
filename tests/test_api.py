@@ -148,6 +148,102 @@ def test_invalid_date_range_returns_422(client):
 
 # ── Lifespan guard test ───────────────────────────────────────────────────────
 
+# ── Costs router ──────────────────────────────────────────────────────────────
+
+def test_costs_by_practice(client):
+    resp = client.post("/api/v1/costs/by-practice", json=VALID_FILTERS, headers=HEADERS)
+    assert resp.status_code == 200
+    rows = resp.json()
+    assert isinstance(rows, list)
+    assert all("date" in r and "practice" in r and "total_cost" in r for r in rows)
+
+
+def test_costs_cache_hit_rate_wraps_float(client):
+    """get_cache_hit_rate returns a raw float; endpoint must wrap it in CacheHitRateResponse."""
+    resp = client.post("/api/v1/costs/cache-hit-rate", json=VALID_FILTERS, headers=HEADERS)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "cache_hit_rate" in data
+    assert 0.0 <= data["cache_hit_rate"] <= 1.0
+
+
+# ── Team router ───────────────────────────────────────────────────────────────
+
+def test_team_by_practice(client):
+    resp = client.post("/api/v1/team/by-practice", json=VALID_FILTERS, headers=HEADERS)
+    assert resp.status_code == 200
+    rows = resp.json()
+    assert isinstance(rows, list)
+    assert all("practice" in r and "session_count" in r and "total_cost" in r for r in rows)
+
+
+def test_team_top_engineers(client):
+    resp = client.post("/api/v1/team/top-engineers", json=VALID_FILTERS, headers=HEADERS)
+    assert resp.status_code == 200
+    rows = resp.json()
+    assert isinstance(rows, list)
+    assert len(rows) <= 10
+    assert all("full_name" in r and "session_count" in r for r in rows)
+
+
+# ── Activity router ───────────────────────────────────────────────────────────
+
+def test_activity_hourly_heatmap(client):
+    resp = client.post("/api/v1/activity/hourly-heatmap", json=VALID_FILTERS, headers=HEADERS)
+    assert resp.status_code == 200
+    rows = resp.json()
+    assert isinstance(rows, list)
+    assert all("hour" in r and "day_of_week" in r and "session_count" in r for r in rows)
+
+
+def test_activity_business_hours(client):
+    resp = client.post("/api/v1/activity/business-hours", json=VALID_FILTERS, headers=HEADERS)
+    assert resp.status_code == 200
+    rows = resp.json()
+    assert isinstance(rows, list)
+    assert all("category" in r and "session_count" in r for r in rows)
+
+
+# ── Tools router ──────────────────────────────────────────────────────────────
+
+def test_tools_frequency(client):
+    resp = client.post("/api/v1/tools/frequency", json=VALID_FILTERS, headers=HEADERS)
+    assert resp.status_code == 200
+    rows = resp.json()
+    assert isinstance(rows, list)
+    assert all("tool_name" in r and "call_count" in r for r in rows)
+
+
+def test_tools_success_rate(client):
+    resp = client.post("/api/v1/tools/success-rate", json=VALID_FILTERS, headers=HEADERS)
+    assert resp.status_code == 200
+    rows = resp.json()
+    assert isinstance(rows, list)
+    assert all("tool_name" in r and "success_rate" in r for r in rows)
+
+
+# ── Sessions router ───────────────────────────────────────────────────────────
+
+def test_sessions_duration_hist(client):
+    """Returns raw per-session rows; binning is caller's responsibility."""
+    resp = client.post("/api/v1/sessions/duration-hist", json=VALID_FILTERS, headers=HEADERS)
+    assert resp.status_code == 200
+    rows = resp.json()
+    assert isinstance(rows, list)
+    assert all("session_id" in r and "duration_mins" in r for r in rows)
+
+
+def test_sessions_error_breakdown(client):
+    resp = client.post("/api/v1/sessions/error-breakdown", json=VALID_FILTERS, headers=HEADERS)
+    assert resp.status_code == 200
+    rows = resp.json()
+    assert isinstance(rows, list)
+    assert all("status_code" in r and "count" in r for r in rows)
+    assert len(rows) >= 1  # seed data has one 401 error
+
+
+# ── Lifespan guard test ───────────────────────────────────────────────────────
+
 def test_lifespan_raises_if_db_missing(monkeypatch):
     """Lifespan must refuse to start when DB file does not exist."""
     monkeypatch.setenv("API_KEY", API_KEY)
