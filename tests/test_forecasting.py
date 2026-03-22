@@ -1,6 +1,7 @@
 import pandas as pd
 
 from src.forecasting import (
+    _compute_cv_metrics,
     build_forecast_summary,
     detect_anomalies,
     normalize_daily_costs,
@@ -144,3 +145,34 @@ def test_detect_anomalies_returns_empty_frame_when_residual_std_is_zero():
 
     assert list(rows.columns) == ["ds", "actual_cost", "expected_cost", "residual"]
     assert rows.empty
+
+
+def test_compute_cv_metrics_falls_back_to_manual_mape_when_prophet_returns_nan(monkeypatch):
+    history = pd.DataFrame(
+        {
+            "ds": pd.date_range("2025-12-01", periods=44, freq="D"),
+            "y": [1.0] * 44,
+        }
+    )
+    cv_frame = pd.DataFrame(
+        {
+            "ds": pd.date_range("2026-01-15", periods=3, freq="D"),
+            "y": [10.0, 0.0, 5.0],
+            "yhat": [8.0, 1.0, 6.0],
+        }
+    )
+    metrics_frame = pd.DataFrame(
+        {
+            "mae": [1.0, 1.0, 1.0],
+            "mape": [float("nan"), float("nan"), float("nan")],
+            "coverage": [0.9, 0.9, 0.9],
+        }
+    )
+
+    monkeypatch.setattr("src.forecasting.cross_validation", lambda *args, **kwargs: cv_frame)
+    monkeypatch.setattr("src.forecasting.performance_metrics", lambda *_args, **_kwargs: metrics_frame)
+
+    metrics, note = _compute_cv_metrics(object(), history)
+
+    assert note is None
+    assert metrics == {"mae": 1.0, "mape": 0.2, "coverage": 0.9}

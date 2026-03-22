@@ -223,6 +223,45 @@ def render_anomaly_table(anomalies_df: pd.DataFrame) -> None:
 
 st.set_page_config(page_title="Claude Code Analytics", layout="wide")
 
+st.markdown(
+    """
+    <style>
+    div[data-baseweb="tab-list"] {
+        gap: 0.95rem;
+        flex-wrap: wrap;
+        margin-bottom: 0.8rem;
+    }
+
+    div[data-baseweb="tab-list"] button:nth-child(7),
+    div[data-baseweb="tab-list"] button:last-of-type {
+        border-radius: 6px !important;
+        border: 1px solid rgba(249, 115, 22, 0.45) !important;
+        background: rgba(249, 115, 22, 0.12) !important;
+        padding-left: 1rem !important;
+        padding-right: 1rem !important;
+    }
+
+    div[data-baseweb="tab-list"] button:nth-child(7) p,
+    div[data-baseweb="tab-list"] button:last-of-type p {
+        color: #fb923c !important;
+        font-weight: 600 !important;
+    }
+
+    div[data-baseweb="tab-list"] button[aria-selected="true"]:nth-child(7),
+    div[data-baseweb="tab-list"] button[aria-selected="true"]:last-of-type {
+        background: rgba(249, 115, 22, 0.25) !important;
+        border-color: rgba(249, 115, 22, 0.7) !important;
+    }
+
+    div[data-baseweb="tab-list"] button[aria-selected="true"]:nth-child(7) p,
+    div[data-baseweb="tab-list"] button[aria-selected="true"]:last-of-type p {
+        color: #fb923c !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 # ── Sidebar Filters ───────────────────────────────────────────────────────────
 with st.sidebar:
     st.title("Filters")
@@ -519,17 +558,26 @@ with tab7:
     st.markdown(
         """
         <div style="
-            padding: 1rem 1.1rem;
-            border-radius: 0.9rem;
-            border: 1px solid rgba(217, 119, 6, 0.45);
-            background: linear-gradient(90deg, rgba(251, 191, 36, 0.24), rgba(249, 115, 22, 0.10));
+            padding: 1.1rem 1.2rem;
+            border-radius: 1rem;
+            border: 1px solid #fdba74;
+            border-left: 8px solid #f97316;
+            background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%);
+            box-shadow: 0 14px 30px rgba(249, 115, 22, 0.12);
             color: #7c2d12;
-            margin-bottom: 0.75rem;
+            margin-bottom: 0.9rem;
         ">
-            <div style="font-size: 1.08rem; font-weight: 700; color: #9a3412;">
-                Forecast & Anomalies
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap;">
+                <div>
+                    <div style="font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.14em; font-weight: 800; color: #ea580c;">
+                        Predictive Analytics
+                    </div>
+                    <div style="font-size: 1.3rem; font-weight: 800; color: #7c2d12; margin-top: 0.15rem;">
+                        Forecast & Anomalies
+                    </div>
+                </div>
             </div>
-            <div style="margin-top: 0.25rem;">
+            <div style="margin-top: 0.45rem; color: #9a3412; font-size: 1rem;">
                 Review the forecasted daily cost, uncertainty range, and flagged anomalies for the selected filters.
             </div>
         </div>
@@ -555,6 +603,8 @@ with tab7:
     metric_cols[2].metric("Coverage", fmt_optional_metric(metrics.get("coverage"), "percent"))
 
     st.caption("MAPE and coverage are shown as percentages; MAE is shown in cost units.")
+    if status == "ok" and metrics.get("mape") is None:
+        st.caption("MAPE is only available when cross-validation has non-zero actual-cost days to evaluate.")
 
     history_df = normalize_forecast_frame(forecast_summary.get("history", []))
     forecast_df = normalize_forecast_frame(forecast_summary.get("forecast", []))

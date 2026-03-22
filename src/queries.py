@@ -57,7 +57,7 @@ def _where(filters: dict, ts_col: str) -> str:
 
     date_start = f.date_start.isoformat()
     date_end   = f.date_end.isoformat()
-    conds = [f"{ts_col} BETWEEN '{date_start}' AND '{date_end}'"]
+    conds = [f"CAST({ts_col} AS DATE) BETWEEN '{date_start}' AND '{date_end}'"]
 
     if f.practices:
         vals = ", ".join(f"'{p}'" for p in f.practices)

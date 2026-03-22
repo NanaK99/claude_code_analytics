@@ -56,7 +56,9 @@ def normalize_daily_costs(
     frame = frame.groupby("ds", as_index=False)["y"].sum().sort_values("ds")
 
     start = _coerce_date(date_start) if date_start is not None else frame["ds"].min()
-    end = _coerce_date(date_end) if date_end is not None else frame["ds"].max()
+    actual_max = frame["ds"].max()
+    requested_end = _coerce_date(date_end) if date_end is not None else actual_max
+    end = min(requested_end, actual_max)
     if pd.isna(start) or pd.isna(end) or start > end:
         return _empty_history_frame()
 
@@ -112,6 +114,23 @@ def detect_anomalies(history_with_fit: pd.DataFrame, sigma_threshold: float = 2.
     return anomalies.loc[:, _ANOMALY_COLUMNS]
 
 
+def _safe_mape_from_cv(cv_df: pd.DataFrame) -> Optional[float]:
+    """Compute MAPE while skipping rows whose actual cost is zero."""
+    if cv_df is None or cv_df.empty or not {"y", "yhat"}.issubset(cv_df.columns):
+        return None
+
+    actual = pd.to_numeric(cv_df["y"], errors="coerce")
+    predicted = pd.to_numeric(cv_df["yhat"], errors="coerce")
+    valid = actual.notna() & predicted.notna() & (actual != 0)
+    if not valid.any():
+        return None
+
+    ape = ((actual.loc[valid] - predicted.loc[valid]).abs() / actual.loc[valid].abs()).mean()
+    if pd.isna(ape):
+        return None
+    return float(ape)
+
+
 def _compute_cv_metrics(model: Prophet, history: pd.DataFrame) -> tuple[Optional[dict], Optional[str]]:
     if len(history) < _CV_MIN_DAYS:
         return None, "Cross-validation metrics require at least 44 days of history."
@@ -133,9 +152,13 @@ def _compute_cv_metrics(model: Prophet, history: pd.DataFrame) -> tuple[Optional
 
     selected = [column for column in ["mae", "mape", "coverage"] if column in metrics_df.columns]
     metrics = metrics_df.loc[:, selected].mean(numeric_only=True)
+    mape = None if pd.isna(metrics.get("mape")) else float(metrics.get("mape"))
+    if mape is None:
+        mape = _safe_mape_from_cv(cv_df)
+
     return {
         "mae": None if pd.isna(metrics.get("mae")) else float(metrics.get("mae")),
-        "mape": None if pd.isna(metrics.get("mape")) else float(metrics.get("mape")),
+        "mape": mape,
         "coverage": None if pd.isna(metrics.get("coverage")) else float(metrics.get("coverage")),
     }, None
 
