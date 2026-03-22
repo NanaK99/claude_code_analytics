@@ -1,4 +1,5 @@
 import duckdb
+import numpy as np
 import streamlit as st
 import plotly.express as px
 import pandas as pd
@@ -268,11 +269,21 @@ with tab6:
         if df_dur.empty:
             st.info("No data for selected filters.")
         else:
-            fig = px.histogram(df_dur, x="duration_mins", nbins=30,
-                               title="Session Duration Distribution (mins)",
-                               labels={"duration_mins": "Duration (mins)"})
-            fig.update_xaxes(type="log")
-            st.plotly_chart(fig, use_container_width=True)
+            df_dur_pos = df_dur[df_dur["duration_mins"] > 0]
+            if df_dur_pos.empty:
+                st.info("No sessions with measurable duration.")
+            else:
+                vals = df_dur_pos["duration_mins"].values
+                bins = np.logspace(np.log10(vals.min()), np.log10(vals.max()), 31)
+                counts, edges = np.histogram(vals, bins=bins)
+                bin_centers = np.sqrt(edges[:-1] * edges[1:])
+                fig = px.bar(
+                    x=bin_centers, y=counts,
+                    log_x=True,
+                    title="Session Duration Distribution (mins)",
+                    labels={"x": "Duration (mins)", "y": "Sessions"},
+                )
+                st.plotly_chart(fig, use_container_width=True)
 
         df_lat = get_api_latency_by_model(conn, filters)
         if not df_lat.empty:
