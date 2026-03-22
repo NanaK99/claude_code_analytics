@@ -37,3 +37,6 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
 
 # Routers registered in Tasks 6-11
 # Auth is enforced via dependencies=[Depends(verify_api_key)] on each router's APIRouter()
+
+from src.api.routers import overview
+app.include_router(overview.router, prefix="/api/v1")

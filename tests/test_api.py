@@ -71,7 +71,9 @@ def client(seed_db, monkeypatch):
         mock.patch("src.api.main.duckdb") as mock_duckdb,
     ):
         mock_path.return_value.exists.return_value = True
-        mock_duckdb.connect.return_value = seed_db
+        # Do NOT set connect.return_value = seed_db — lifespan would then call
+        # seed_db.close() on teardown, invalidating the module-scoped connection.
+        # The get_db dependency override already injects seed_db for all routers.
         with TestClient(app) as c:
             yield c
 
@@ -81,19 +83,67 @@ def client(seed_db, monkeypatch):
 # ── Auth tests ────────────────────────────────────────────────────────────────
 
 def test_missing_api_key_returns_403(client):
-    # Will return 403 once overview router is registered (Task 6); 404 before that
     resp = client.post("/api/v1/overview/kpi-metrics", json=VALID_FILTERS)
-    assert resp.status_code in (403, 404)
+    assert resp.status_code == 403
 
 
 def test_wrong_api_key_returns_403(client):
-    # Will return 403 once overview router is registered (Task 6); 404 before that
     resp = client.post(
         "/api/v1/overview/kpi-metrics",
         json=VALID_FILTERS,
         headers={"X-API-Key": "wrong-key"},
     )
-    assert resp.status_code in (403, 404)
+    assert resp.status_code == 403
+
+
+# ── Overview router ───────────────────────────────────────────────────────────
+
+def test_overview_kpi_metrics(client):
+    resp = client.post("/api/v1/overview/kpi-metrics", json=VALID_FILTERS, headers=HEADERS)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total_sessions"] == 2
+    assert data["active_engineers"] == 2
+    assert "total_cost" in data
+    assert "error_rate" in data
+
+
+def test_overview_daily_sessions(client):
+    resp = client.post("/api/v1/overview/daily-sessions", json=VALID_FILTERS, headers=HEADERS)
+    assert resp.status_code == 200
+    rows = resp.json()
+    assert isinstance(rows, list)
+    assert all("date" in r and "session_count" in r for r in rows)
+
+
+def test_overview_cache_savings_wraps_float(client):
+    """get_cache_savings returns a raw float; endpoint must wrap it in CacheSavingsResponse."""
+    resp = client.post("/api/v1/overview/cache-savings", json=VALID_FILTERS, headers=HEADERS)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "cache_savings_usd" in data
+    assert isinstance(data["cache_savings_usd"], float)
+
+
+def test_overview_session_kpis_wraps_dict(client):
+    """get_session_kpis returns a dict; endpoint must match SessionKpisResponse schema."""
+    resp = client.post("/api/v1/overview/session-kpis", json=VALID_FILTERS, headers=HEADERS)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "avg_duration_mins" in data
+    assert "avg_prompts_per_session" in data
+
+
+def test_invalid_filter_returns_422(client):
+    bad = {**VALID_FILTERS, "practices": ["Nonexistent Practice"]}
+    resp = client.post("/api/v1/overview/kpi-metrics", json=bad, headers=HEADERS)
+    assert resp.status_code == 422
+
+
+def test_invalid_date_range_returns_422(client):
+    bad = {**VALID_FILTERS, "date_start": "2026-01-01", "date_end": "2025-01-01"}
+    resp = client.post("/api/v1/overview/kpi-metrics", json=bad, headers=HEADERS)
+    assert resp.status_code == 422
 
 
 # ── Lifespan guard test ───────────────────────────────────────────────────────
