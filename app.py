@@ -1,38 +1,39 @@
-import duckdb
+import os
+
 import numpy as np
 import streamlit as st
 import plotly.express as px
 import pandas as pd
-from pathlib import Path
+import requests
+from dotenv import load_dotenv
 
-from src.queries import (
-    get_kpi_metrics, get_daily_sessions,
-    get_cost_by_practice_over_time, get_cost_by_level_over_time,
-    get_token_breakdown, get_model_distribution, get_cache_hit_rate,
-    get_usage_by_practice, get_usage_by_level, get_top_engineers, get_usage_by_location,
-    get_hourly_heatmap, get_day_of_week_counts, get_business_hours_split,
-    get_tool_frequency, get_tool_accept_reject, get_tool_execution_time,
-    # New
-    get_session_kpis, get_cache_savings, get_avg_cost_per_session_over_time,
-    get_tool_success_rate,
-    get_session_duration_hist, get_session_cost_by_practice,
-    get_api_latency_by_model, get_error_breakdown, get_level_cost_correlation,
-)
+load_dotenv()
+_API_URL = os.environ.get("API_URL", "http://localhost:8000")
+_API_KEY = os.environ.get("API_KEY", "")
 
-DB_PATH = "db/analytics.duckdb"
+
+def api_post(path: str, filters: dict):
+    """POST to the FastAPI backend. Returns parsed JSON or stops on failure."""
+    url = f"{_API_URL}{path}"
+    try:
+        resp = requests.post(url, json=filters, headers={"X-API-Key": _API_KEY}, timeout=30)
+        resp.raise_for_status()
+        return resp.json()
+    except requests.exceptions.ConnectionError:
+        st.error(
+            f"Cannot connect to the API at `{_API_URL}`. "
+            "Start it: `conda run -n provectus_task uvicorn api:app --reload`"
+        )
+        st.stop()
+    except requests.exceptions.HTTPError as e:
+        st.error(f"API error {resp.status_code}: {resp.json().get('detail', str(e))}")
+        st.stop()
+    except requests.exceptions.Timeout:
+        st.error(f"API request timed out for `{path}`.")
+        st.stop()
+
 
 st.set_page_config(page_title="Claude Code Analytics", layout="wide")
-
-
-@st.cache_resource
-def get_connection():
-    if not Path(DB_PATH).exists():
-        st.error(f"Database not found at `{DB_PATH}`. Run `python ingest.py` first.")
-        st.stop()
-    return duckdb.connect(DB_PATH, read_only=True)
-
-
-conn = get_connection()
 
 # ── Sidebar Filters ───────────────────────────────────────────────────────────
 with st.sidebar:
@@ -70,14 +71,14 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
 
 # ── Tab 1: Overview ───────────────────────────────────────────────────────────
 with tab1:
-    kpis = get_kpi_metrics(conn, filters)
+    kpis = api_post("/api/v1/overview/kpi-metrics", filters)
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Total Cost",       f"${kpis['total_cost']:,.2f}")
     c2.metric("Total Sessions",   f"{kpis['total_sessions']:,}")
     c3.metric("Active Engineers", kpis["active_engineers"])
     c4.metric("API Error Rate",   f"{kpis['error_rate']:.1%}")
 
-    session_kpis = get_session_kpis(conn, filters)
+    session_kpis = api_post("/api/v1/overview/session-kpis", filters)
     c5, c6 = st.columns(2)
     c5.metric("Avg Session Duration", f"{session_kpis['avg_duration_mins']:.1f} min",
               help="Average time from first to last API call within a session")
@@ -85,7 +86,7 @@ with tab1:
 
     st.divider()
 
-    df = get_daily_sessions(conn, filters)
+    df = pd.DataFrame(api_post("/api/v1/overview/daily-sessions", filters))
     if df.empty:
         st.info("No data for selected filters.")
     else:
@@ -97,7 +98,7 @@ with tab2:
     col_left, col_right = st.columns([3, 1])
 
     with col_left:
-        df_practice = get_cost_by_practice_over_time(conn, filters)
+        df_practice = pd.DataFrame(api_post("/api/v1/costs/by-practice", filters))
         if df_practice.empty:
             st.info("No data for selected filters.")
         else:
@@ -105,33 +106,33 @@ with tab2:
                           title="Daily Cost by Practice")
             st.plotly_chart(fig, use_container_width=True)
 
-        df_level = get_cost_by_level_over_time(conn, filters)
+        df_level = pd.DataFrame(api_post("/api/v1/costs/by-level", filters))
         if not df_level.empty:
             fig = px.line(df_level, x="date", y="total_cost", color="level",
                           title="Daily Cost by Seniority Level")
             st.plotly_chart(fig, use_container_width=True)
 
-        df_avg_cost = get_avg_cost_per_session_over_time(conn, filters)
+        df_avg_cost = pd.DataFrame(api_post("/api/v1/costs/avg-cost-trend", filters))
         if not df_avg_cost.empty:
             fig = px.line(df_avg_cost, x="date", y="avg_cost_per_session",
                           title="Avg Cost per Session (Daily)")
             st.plotly_chart(fig, use_container_width=True)
 
     with col_right:
-        cache_rate = get_cache_hit_rate(conn, filters)
+        cache_rate = api_post("/api/v1/costs/cache-hit-rate", filters)["cache_hit_rate"]
         st.metric("Cache Hit Rate", f"{cache_rate:.1%}")
 
-        savings = get_cache_savings(conn, filters)
+        savings = api_post("/api/v1/overview/cache-savings", filters)["cache_savings_usd"]
         st.metric("~Cache Savings (est.)", f"${savings:,.2f}",
                   help="Estimated savings from prompt caching vs. no-cache baseline. Based on Sonnet 4.6 pricing applied to all models.")
 
-        df_model = get_model_distribution(conn, filters)
+        df_model = pd.DataFrame(api_post("/api/v1/costs/model-distribution", filters))
         if not df_model.empty:
             fig = px.pie(df_model, names="model", values="call_count",
                          title="Model Distribution")
             st.plotly_chart(fig, use_container_width=True)
 
-    df_tokens = get_token_breakdown(conn, filters)
+    df_tokens = pd.DataFrame(api_post("/api/v1/costs/token-breakdown", filters))
     if not df_tokens.empty:
         fig = px.bar(df_tokens, x="token_type", y="total", title="Token Breakdown")
         st.plotly_chart(fig, use_container_width=True)
@@ -141,7 +142,7 @@ with tab3:
     col_left, col_right = st.columns(2)
 
     with col_left:
-        df_practice = get_usage_by_practice(conn, filters)
+        df_practice = pd.DataFrame(api_post("/api/v1/team/by-practice", filters))
         if df_practice.empty:
             st.info("No data for selected filters.")
         else:
@@ -149,21 +150,21 @@ with tab3:
                          title="Sessions by Practice", color="practice")
             st.plotly_chart(fig, use_container_width=True)
 
-        df_location = get_usage_by_location(conn, filters)
+        df_location = pd.DataFrame(api_post("/api/v1/team/by-location", filters))
         if not df_location.empty:
             fig = px.bar(df_location, x="location", y="session_count",
                          title="Sessions by Location", color="location")
             st.plotly_chart(fig, use_container_width=True)
 
     with col_right:
-        df_level = get_usage_by_level(conn, filters)
+        df_level = pd.DataFrame(api_post("/api/v1/team/by-level", filters))
         if not df_level.empty:
             fig = px.bar(df_level, x="level", y="session_count",
                          title="Sessions by Seniority Level")
             st.plotly_chart(fig, use_container_width=True)
 
     st.subheader("Top 10 Engineers by Session Count")
-    df_top = get_top_engineers(conn, filters)
+    df_top = pd.DataFrame(api_post("/api/v1/team/top-engineers", filters))
     if df_top.empty:
         st.info("No data for selected filters.")
     else:
@@ -173,7 +174,7 @@ with tab3:
 with tab4:
     DAY_ORDER = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
-    df_heatmap = get_hourly_heatmap(conn, filters)
+    df_heatmap = pd.DataFrame(api_post("/api/v1/activity/hourly-heatmap", filters))
     if df_heatmap.empty:
         st.info("No data for selected filters.")
     else:
@@ -194,7 +195,7 @@ with tab4:
     col_left, col_right = st.columns(2)
 
     with col_left:
-        df_dow = get_day_of_week_counts(conn, filters)
+        df_dow = pd.DataFrame(api_post("/api/v1/activity/day-of-week", filters))
         if not df_dow.empty:
             df_dow["day_of_week"] = pd.Categorical(
                 df_dow["day_of_week"], categories=DAY_ORDER, ordered=True
@@ -205,7 +206,7 @@ with tab4:
             st.plotly_chart(fig, use_container_width=True)
 
     with col_right:
-        df_bh = get_business_hours_split(conn, filters)
+        df_bh = pd.DataFrame(api_post("/api/v1/activity/business-hours", filters))
         if not df_bh.empty:
             fig = px.pie(df_bh, names="category", values="session_count",
                          title="Business Hours vs After Hours")
@@ -218,7 +219,7 @@ with tab5:
         "**Read**, **Grep**, **Glob** indicate exploration._"
     )
 
-    df_freq = get_tool_frequency(conn, filters)
+    df_freq = pd.DataFrame(api_post("/api/v1/tools/frequency", filters))
     if df_freq.empty:
         st.info("No data for selected filters.")
     else:
@@ -229,7 +230,7 @@ with tab5:
     col_left, col_right = st.columns(2)
 
     with col_left:
-        df_ar = get_tool_accept_reject(conn, filters)
+        df_ar = pd.DataFrame(api_post("/api/v1/tools/accept-reject", filters))
         if not df_ar.empty:
             df_melted = df_ar.melt(
                 id_vars="tool_name",
@@ -241,14 +242,14 @@ with tab5:
             st.plotly_chart(fig, use_container_width=True)
 
     with col_right:
-        df_exec = get_tool_execution_time(conn, filters)
+        df_exec = pd.DataFrame(api_post("/api/v1/tools/execution-time", filters))
         if not df_exec.empty:
             fig = px.bar(df_exec, x="tool_name", y="avg_duration_ms",
                          title="Avg Execution Time per Tool (ms)")
             st.plotly_chart(fig, use_container_width=True)
 
     st.subheader("Tool Success Rate")
-    df_success = get_tool_success_rate(conn, filters)
+    df_success = pd.DataFrame(api_post("/api/v1/tools/success-rate", filters))
     if not df_success.empty:
         fig = px.bar(df_success, x="success_rate", y="tool_name", orientation="h",
                      title="Tool Success Rate (sorted ascending — lowest first)",
@@ -265,7 +266,7 @@ with tab6:
     col_left, col_right = st.columns(2)
 
     with col_left:
-        df_dur = get_session_duration_hist(conn, filters)
+        df_dur = pd.DataFrame(api_post("/api/v1/sessions/duration-hist", filters))
         if df_dur.empty:
             st.info("No data for selected filters.")
         else:
@@ -285,7 +286,7 @@ with tab6:
                 )
                 st.plotly_chart(fig, use_container_width=True)
 
-        df_lat = get_api_latency_by_model(conn, filters)
+        df_lat = pd.DataFrame(api_post("/api/v1/sessions/api-latency", filters))
         if not df_lat.empty:
             fig = px.bar(df_lat, x="avg_duration_ms", y="model", orientation="h",
                          title="Avg API Latency by Model (ms)",
@@ -293,14 +294,14 @@ with tab6:
             st.plotly_chart(fig, use_container_width=True)
 
     with col_right:
-        df_err = get_error_breakdown(conn, filters)
+        df_err = pd.DataFrame(api_post("/api/v1/sessions/error-breakdown", filters))
         if not df_err.empty:
             fig = px.bar(df_err, x="status_code", y="count",
                          title="API Errors by Status Code",
                          labels={"status_code": "Status Code", "count": "Error Count"})
             st.plotly_chart(fig, use_container_width=True)
 
-        df_level_cost = get_level_cost_correlation(conn, filters)
+        df_level_cost = pd.DataFrame(api_post("/api/v1/sessions/level-cost-correlation", filters))
         if not df_level_cost.empty:
             fig = px.bar(df_level_cost, x="level", y="avg_cost_per_session",
                          title="Avg Cost per Session by Seniority Level",
@@ -308,7 +309,7 @@ with tab6:
             st.plotly_chart(fig, use_container_width=True)
 
     st.subheader("Session Cost by Practice")
-    df_sc = get_session_cost_by_practice(conn, filters)
+    df_sc = pd.DataFrame(api_post("/api/v1/sessions/cost-by-practice", filters))
     if df_sc.empty:
         st.info("No data for selected filters.")
     else:

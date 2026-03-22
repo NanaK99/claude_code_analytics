@@ -1,4 +1,5 @@
 .DS_Store
+.env
 data_generation/output/
 docs/superpowers/
 db/
