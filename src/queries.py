@@ -373,3 +373,31 @@ def get_tool_execution_time(conn, filters: dict) -> pd.DataFrame:
         FROM tool_results tr JOIN employees e ON tr.user_email = e.email {w}
         GROUP BY tool_name ORDER BY avg_duration_ms DESC
     """)
+
+
+# ── Session Intelligence ───────────────────────────────────────────────────
+
+def get_session_duration_hist(conn, filters: dict) -> pd.DataFrame:
+    w = _where(filters, "ar.timestamp")
+    return _df(conn, f"""
+        SELECT ar.session_id,
+               EXTRACT(epoch FROM (MAX(ar.timestamp) - MIN(ar.timestamp))) / 60.0 AS duration_mins
+        FROM api_requests ar JOIN employees e ON ar.user_email = e.email
+        {w}
+        GROUP BY ar.session_id
+    """)
+
+
+def get_session_cost_by_practice(conn, filters: dict) -> pd.DataFrame:
+    w = _where(filters, "up.timestamp")
+    return _df(conn, f"""
+        WITH sc AS (
+            SELECT session_id, SUM(cost_usd) AS total_cost
+            FROM api_requests GROUP BY session_id
+        )
+        SELECT up.session_id, e.practice, COALESCE(sc.total_cost, 0) AS total_cost
+        FROM user_prompts up
+        JOIN employees e ON up.user_email = e.email
+        LEFT JOIN sc ON up.session_id = sc.session_id
+        {w}
+    """)

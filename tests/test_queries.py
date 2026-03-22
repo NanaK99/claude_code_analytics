@@ -297,3 +297,29 @@ def test_get_tool_success_rate(conn):
     # Both tool_results rows are Read with success=True → success_rate = 1.0
     read_row = df[df["tool_name"] == "Read"].iloc[0]
     assert read_row["success_rate"] == pytest.approx(1.0, rel=1e-6)
+
+
+from src.queries import get_session_duration_hist, get_session_cost_by_practice
+
+def test_get_session_duration_hist(conn):
+    df = get_session_duration_hist(conn, ALL_FILTERS)
+    assert isinstance(df, pd.DataFrame)
+    assert not df.empty
+    assert "session_id" in df.columns
+    assert "duration_mins" in df.columns
+    assert (df["duration_mins"] >= 0).all()
+    # s1 has api_requests at 10:00 and 10:05 → duration = 5 min
+    s1_row = df[df["session_id"] == "s1"].iloc[0]
+    assert s1_row["duration_mins"] == pytest.approx(5.0, rel=1e-3)
+
+def test_get_session_cost_by_practice(conn):
+    df = get_session_cost_by_practice(conn, ALL_FILTERS)
+    assert isinstance(df, pd.DataFrame)
+    assert not df.empty
+    assert "session_id" in df.columns
+    assert "practice" in df.columns
+    assert "total_cost" in df.columns
+    # s1/alice/Backend Engineering: cost = 0.01 + 0.001 = 0.011
+    row = df[df["session_id"] == "s1"].iloc[0]
+    assert row["practice"] == "Backend Engineering"
+    assert row["total_cost"] == pytest.approx(0.011, rel=1e-3)
