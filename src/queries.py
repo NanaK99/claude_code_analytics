@@ -1,18 +1,71 @@
+import datetime
+from typing import List
 import pandas as pd
+from pydantic import BaseModel, field_validator
 
+_VALID_PRACTICES = {
+    "Platform Engineering", "Data Engineering", "ML Engineering",
+    "Backend Engineering", "Frontend Engineering",
+}
+_VALID_LEVELS    = {f"L{i}" for i in range(1, 11)}
+_VALID_LOCATIONS = {"United States", "Germany", "United Kingdom", "Poland", "Canada"}
+
+
+class Filters(BaseModel):
+    date_start: datetime.date
+    date_end:   datetime.date
+    practices:  List[str] = []
+    levels:     List[str] = []
+    locations:  List[str] = []
+
+    @field_validator("practices", mode="before")
+    @classmethod
+    def validate_practices(cls, values: list) -> list:
+        for v in values:
+            if v not in _VALID_PRACTICES:
+                raise ValueError(f"Invalid practice: {v!r}")
+        return values
+
+    @field_validator("levels", mode="before")
+    @classmethod
+    def validate_levels(cls, values: list) -> list:
+        for v in values:
+            if v not in _VALID_LEVELS:
+                raise ValueError(f"Invalid level: {v!r}")
+        return values
+
+    @field_validator("locations", mode="before")
+    @classmethod
+    def validate_locations(cls, values: list) -> list:
+        for v in values:
+            if v not in _VALID_LOCATIONS:
+                raise ValueError(f"Invalid location: {v!r}")
+        return values
 
 def _where(filters: dict, ts_col: str) -> str:
     """Build a SQL WHERE clause. Assumes `employees e` is already joined."""
-    conds = [f"{ts_col} BETWEEN '{filters['date_start']}' AND '{filters['date_end']}'"]
-    if filters.get("practices"):
-        vals = ", ".join(f"'{p}'" for p in filters["practices"])
+    f = Filters(**filters)
+
+    assert f.date_start <= f.date_end, (
+        f"date_start ({f.date_start}) must be <= date_end ({f.date_end})"
+    )
+
+    date_start = f.date_start.isoformat()
+    date_end   = f.date_end.isoformat()
+    conds = [f"{ts_col} BETWEEN '{date_start}' AND '{date_end}'"]
+
+    if f.practices:
+        vals = ", ".join(f"'{p}'" for p in f.practices)
         conds.append(f"e.practice IN ({vals})")
-    if filters.get("levels"):
-        vals = ", ".join(f"'{l}'" for l in filters["levels"])
+
+    if f.levels:
+        vals = ", ".join(f"'{lv}'" for lv in f.levels)
         conds.append(f"e.level IN ({vals})")
-    if filters.get("locations"):
-        vals = ", ".join(f"'{loc}'" for loc in filters["locations"])
+
+    if f.locations:
+        vals = ", ".join(f"'{loc}'" for loc in f.locations)
         conds.append(f"e.location IN ({vals})")
+
     return "WHERE " + " AND ".join(conds)
 
 

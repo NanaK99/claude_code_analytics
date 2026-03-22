@@ -199,3 +199,47 @@ def test_get_tool_execution_time(conn):
     read_avg = df.loc[df["tool_name"] == "Read", "avg_duration_ms"].values[0]
     # tool_results: Read row 1 = 61ms, Read row 2 = 120ms → avg = 90.5ms
     assert read_avg == pytest.approx(90.5, rel=1e-3)
+
+
+# ── _where() validation tests ──────────────────────────────────────────────
+from src.queries import _where
+
+def _base_filters():
+    return {
+        "date_start": "2025-12-01",
+        "date_end":   "2026-02-28",
+        "practices":  [],
+        "levels":     [],
+        "locations":  [],
+    }
+
+def test_where_invalid_practice_raises():
+    f = _base_filters()
+    f["practices"] = ["Hacking Division"]
+    with pytest.raises(ValueError, match="Invalid practice"):
+        _where(f, "up.timestamp")
+
+def test_where_invalid_level_raises():
+    f = _base_filters()
+    f["levels"] = ["L99"]
+    with pytest.raises(ValueError, match="Invalid level"):
+        _where(f, "up.timestamp")
+
+def test_where_invalid_location_raises():
+    f = _base_filters()
+    f["locations"] = ["Mars"]
+    with pytest.raises(ValueError, match="Invalid location"):
+        _where(f, "up.timestamp")
+
+def test_where_invalid_date_format_raises():
+    f = _base_filters()
+    f["date_start"] = "not-a-date"
+    with pytest.raises(ValueError):
+        _where(f, "up.timestamp")
+
+def test_where_date_start_after_date_end_raises():
+    f = _base_filters()
+    f["date_start"] = "2026-02-28"
+    f["date_end"]   = "2025-12-01"
+    with pytest.raises(AssertionError):
+        _where(f, "up.timestamp")
