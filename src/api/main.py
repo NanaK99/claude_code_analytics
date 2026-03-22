@@ -30,19 +30,10 @@ app = FastAPI(
 )
 
 
-@app.middleware("http")
-async def require_api_key(request: Request, call_next):
-    """Enforce API key auth before routing so unmatched routes also get 403, not 404."""
-    expected = os.getenv("API_KEY")
-    key = request.headers.get("X-API-Key")
-    if not expected or key != expected:
-        return JSONResponse(status_code=403, content={"detail": "Invalid or missing API key"})
-    return await call_next(request)
-
-
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 
 # Routers registered in Tasks 6-11
+# Auth is enforced via dependencies=[Depends(verify_api_key)] on each router's APIRouter()
