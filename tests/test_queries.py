@@ -1,6 +1,7 @@
 import duckdb
 import pytest
 import pandas as pd
+from pydantic import ValidationError
 from src.schema import init_db
 from src.queries import (
     get_kpi_metrics, get_daily_sessions,
@@ -79,6 +80,17 @@ def test_get_top_engineers_limit_10(conn):
     df = get_top_engineers(conn, ALL_FILTERS)
     assert "full_name" in df.columns
     assert len(df) <= 10
+
+
+def test_get_top_engineers(conn):
+    df = get_top_engineers(conn, ALL_FILTERS)
+    assert not df.empty
+    assert "avg_cost_per_session" in df.columns
+    assert "preferred_model" in df.columns
+    # alice (s1, cost=0.011, 1 session) → avg_cost_per_session ≈ 0.011
+    alice_row = df[df["full_name"] == "Alice"].iloc[0]
+    assert alice_row["avg_cost_per_session"] == pytest.approx(0.011, rel=1e-3)
+    assert alice_row["preferred_model"] in {"claude-sonnet-4-6", "claude-haiku-4-5-20251001"}
 
 
 def test_get_hourly_heatmap(conn):
@@ -241,5 +253,5 @@ def test_where_date_start_after_date_end_raises():
     f = _base_filters()
     f["date_start"] = "2026-02-28"
     f["date_end"]   = "2025-12-01"
-    with pytest.raises(AssertionError):
+    with pytest.raises(ValidationError):
         _where(f, "up.timestamp")

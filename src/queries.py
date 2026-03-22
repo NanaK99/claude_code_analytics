@@ -1,7 +1,7 @@
 import datetime
 from typing import List
 import pandas as pd
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 
 _VALID_PRACTICES = {
     "Platform Engineering", "Data Engineering", "ML Engineering",
@@ -17,6 +17,14 @@ class Filters(BaseModel):
     practices:  List[str] = []
     levels:     List[str] = []
     locations:  List[str] = []
+
+    @model_validator(mode="after")
+    def check_date_order(self) -> "Filters":
+        if self.date_start > self.date_end:
+            raise ValueError(
+                f"date_start ({self.date_start}) must be <= date_end ({self.date_end})"
+            )
+        return self
 
     @field_validator("practices", mode="before")
     @classmethod
@@ -42,13 +50,10 @@ class Filters(BaseModel):
                 raise ValueError(f"Invalid location: {v!r}")
         return values
 
+
 def _where(filters: dict, ts_col: str) -> str:
     """Build a SQL WHERE clause. Assumes `employees e` is already joined."""
     f = Filters(**filters)
-
-    assert f.date_start <= f.date_end, (
-        f"date_start ({f.date_start}) must be <= date_end ({f.date_end})"
-    )
 
     date_start = f.date_start.isoformat()
     date_end   = f.date_end.isoformat()
@@ -170,7 +175,8 @@ def get_cache_hit_rate(conn, filters: dict) -> float:
                SUM(input_tokens + cache_read_tokens + cache_creation_tokens)
         FROM api_requests ar JOIN employees e ON ar.user_email = e.email {w}
     """).fetchone()
-    cache_reads, total = row
+    cache_reads = row[0] or 0
+    total       = row[1] or 0
     return float(cache_reads) / float(total) if total else 0.0
 
 
@@ -203,14 +209,23 @@ def get_top_engineers(conn, filters: dict) -> pd.DataFrame:
     w = _where(filters, "up.timestamp")
     return _df(conn, f"""
         SELECT e.full_name, e.practice, e.level,
-               COUNT(DISTINCT up.session_id) AS session_count,
-               COALESCE(SUM(ar.cost_usd), 0) AS total_cost
+               COUNT(DISTINCT up.session_id)                                          AS session_count,
+               COALESCE(SUM(ar.cost_usd), 0)                                         AS total_cost,
+               COALESCE(SUM(ar.cost_usd), 0)
+                   / NULLIF(COUNT(DISTINCT up.session_id), 0)                         AS avg_cost_per_session,
+               (
+                   SELECT model FROM api_requests inner_ar
+                   WHERE inner_ar.user_email = e.email
+                   GROUP BY model ORDER BY COUNT(*) DESC LIMIT 1
+               )                                                                      AS preferred_model
         FROM user_prompts up
         JOIN employees e ON up.user_email = e.email
-        LEFT JOIN (SELECT session_id, SUM(cost_usd) AS cost_usd FROM api_requests GROUP BY 1) ar
-            ON up.session_id = ar.session_id
+        LEFT JOIN (
+            SELECT session_id, SUM(cost_usd) AS cost_usd
+            FROM api_requests GROUP BY 1
+        ) ar ON up.session_id = ar.session_id
         {w}
-        GROUP BY e.full_name, e.practice, e.level
+        GROUP BY e.full_name, e.practice, e.level, e.email
         ORDER BY session_count DESC LIMIT 10
     """)
 
