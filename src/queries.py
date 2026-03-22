@@ -201,6 +201,23 @@ def get_token_breakdown(conn, filters: dict) -> pd.DataFrame:
     })
 
 
+def get_avg_cost_per_session_over_time(conn, filters: dict) -> pd.DataFrame:
+    w = _where(filters, "up.timestamp")
+    return _df(conn, f"""
+        WITH sc AS (
+            SELECT session_id, SUM(cost_usd) AS total_cost
+            FROM api_requests GROUP BY session_id
+        )
+        SELECT CAST(up.timestamp AS DATE) AS date,
+               SUM(COALESCE(sc.total_cost, 0)) / COUNT(DISTINCT up.session_id) AS avg_cost_per_session
+        FROM user_prompts up
+        JOIN employees e ON up.user_email = e.email
+        LEFT JOIN sc ON up.session_id = sc.session_id
+        {w}
+        GROUP BY 1 ORDER BY 1
+    """)
+
+
 def get_model_distribution(conn, filters: dict) -> pd.DataFrame:
     w = _where(filters, "ar.timestamp")
     return _df(conn, f"""
@@ -337,6 +354,15 @@ def get_tool_accept_reject(conn, filters: dict) -> pd.DataFrame:
                COUNT(*) FILTER (WHERE decision = 'reject') AS reject_count
         FROM tool_decisions td JOIN employees e ON td.user_email = e.email {w}
         GROUP BY tool_name ORDER BY (accept_count + reject_count) DESC
+    """)
+
+
+def get_tool_success_rate(conn, filters: dict) -> pd.DataFrame:
+    w = _where(filters, "tr.timestamp")
+    return _df(conn, f"""
+        SELECT tool_name, AVG(success::INT) AS success_rate
+        FROM tool_results tr JOIN employees e ON tr.user_email = e.email {w}
+        GROUP BY tool_name ORDER BY success_rate ASC
     """)
 
 

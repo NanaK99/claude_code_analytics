@@ -274,3 +274,26 @@ def test_get_cache_savings(conn):
     assert isinstance(result, float)
     # total cache_read_tokens = 500 + 0 + 1000 = 1500; 1500 × 2.70 / 1e6 = 0.00405
     assert result == pytest.approx(0.00405, rel=1e-3)
+
+
+from src.queries import get_avg_cost_per_session_over_time, get_tool_success_rate
+
+def test_get_avg_cost_per_session_over_time(conn):
+    df = get_avg_cost_per_session_over_time(conn, ALL_FILTERS)
+    assert isinstance(df, pd.DataFrame)
+    assert not df.empty
+    assert "date" in df.columns
+    assert "avg_cost_per_session" in df.columns
+    # s1 (alice) on 2025-12-10: total_cost=0.011, sessions=1 → avg=0.011
+    row = df[df["date"].astype(str) == "2025-12-10"].iloc[0]
+    assert row["avg_cost_per_session"] == pytest.approx(0.011, rel=1e-3)
+
+def test_get_tool_success_rate(conn):
+    df = get_tool_success_rate(conn, ALL_FILTERS)
+    assert isinstance(df, pd.DataFrame)
+    assert not df.empty
+    assert "tool_name" in df.columns
+    assert "success_rate" in df.columns
+    # Both tool_results rows are Read with success=True → success_rate = 1.0
+    read_row = df[df["tool_name"] == "Read"].iloc[0]
+    assert read_row["success_rate"] == pytest.approx(1.0, rel=1e-6)
