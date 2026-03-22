@@ -323,3 +323,38 @@ def test_get_session_cost_by_practice(conn):
     row = df[df["session_id"] == "s1"].iloc[0]
     assert row["practice"] == "Backend Engineering"
     assert row["total_cost"] == pytest.approx(0.011, rel=1e-3)
+
+
+from src.queries import get_api_latency_by_model, get_error_breakdown, get_level_cost_correlation
+
+def test_get_api_latency_by_model(conn):
+    df = get_api_latency_by_model(conn, ALL_FILTERS)
+    assert isinstance(df, pd.DataFrame)
+    assert not df.empty
+    assert "model" in df.columns
+    assert "avg_duration_ms" in df.columns
+    # single sonnet row has duration_ms=9000
+    sonnet_row = df[df["model"] == "claude-sonnet-4-6"].iloc[0]
+    assert sonnet_row["avg_duration_ms"] == pytest.approx(9000.0, rel=1e-6)
+
+def test_get_error_breakdown(conn):
+    df = get_error_breakdown(conn, ALL_FILTERS)
+    assert isinstance(df, pd.DataFrame)
+    assert not df.empty
+    assert "status_code" in df.columns
+    assert "count" in df.columns
+    # one api_errors row with status_code="401"
+    row = df[df["status_code"] == "401"].iloc[0]
+    assert row["count"] == 1
+    # "undefined" must not appear (relabeled to "Unknown")
+    assert "undefined" not in df["status_code"].values
+
+def test_get_level_cost_correlation(conn):
+    df = get_level_cost_correlation(conn, ALL_FILTERS)
+    assert isinstance(df, pd.DataFrame)
+    assert not df.empty
+    assert "level" in df.columns
+    assert "avg_cost_per_session" in df.columns
+    # alice is L5, s1 cost=0.011, 1 session → avg=0.011
+    l5_row = df[df["level"] == "L5"].iloc[0]
+    assert l5_row["avg_cost_per_session"] == pytest.approx(0.011, rel=1e-3)

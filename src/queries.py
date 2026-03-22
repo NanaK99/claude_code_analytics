@@ -401,3 +401,39 @@ def get_session_cost_by_practice(conn, filters: dict) -> pd.DataFrame:
         LEFT JOIN sc ON up.session_id = sc.session_id
         {w}
     """)
+
+
+def get_api_latency_by_model(conn, filters: dict) -> pd.DataFrame:
+    w = _where(filters, "ar.timestamp")
+    return _df(conn, f"""
+        SELECT model, AVG(duration_ms) AS avg_duration_ms
+        FROM api_requests ar JOIN employees e ON ar.user_email = e.email {w}
+        GROUP BY model ORDER BY avg_duration_ms DESC
+    """)
+
+
+def get_error_breakdown(conn, filters: dict) -> pd.DataFrame:
+    w = _where(filters, "ae.timestamp")
+    return _df(conn, f"""
+        SELECT CASE WHEN status_code = 'undefined' THEN 'Unknown' ELSE status_code END AS status_code,
+               COUNT(*) AS count
+        FROM api_errors ae JOIN employees e ON ae.user_email = e.email {w}
+        GROUP BY 1 ORDER BY count DESC
+    """)
+
+
+def get_level_cost_correlation(conn, filters: dict) -> pd.DataFrame:
+    w = _where(filters, "up.timestamp")
+    return _df(conn, f"""
+        WITH sc AS (
+            SELECT session_id, SUM(cost_usd) AS total_cost
+            FROM api_requests GROUP BY session_id
+        )
+        SELECT e.level,
+               SUM(COALESCE(sc.total_cost, 0)) / COUNT(DISTINCT up.session_id) AS avg_cost_per_session
+        FROM user_prompts up
+        JOIN employees e ON up.user_email = e.email
+        LEFT JOIN sc ON up.session_id = sc.session_id
+        {w}
+        GROUP BY e.level ORDER BY e.level
+    """)
