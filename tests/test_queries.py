@@ -10,6 +10,7 @@ from src.queries import (
     get_usage_by_practice, get_usage_by_level, get_top_engineers, get_usage_by_location,
     get_hourly_heatmap, get_day_of_week_counts, get_business_hours_split,
     get_tool_frequency, get_tool_accept_reject, get_tool_execution_time,
+    get_daily_cost_totals,
 )
 
 
@@ -358,3 +359,16 @@ def test_get_level_cost_correlation(conn):
     # alice is L5, s1 cost=0.011, 1 session → avg=0.011
     l5_row = df[df["level"] == "L5"].iloc[0]
     assert l5_row["avg_cost_per_session"] == pytest.approx(0.011, rel=1e-3)
+
+def test_get_daily_cost_totals(conn):
+    df = get_daily_cost_totals(conn, ALL_FILTERS)
+    assert isinstance(df, pd.DataFrame)
+    assert list(df.columns) == ["ds", "y"]
+    row = df[df["ds"].astype(str) == "2025-12-10"].iloc[0]
+    assert row["y"] == pytest.approx(0.011, rel=1e-3)
+
+
+def test_get_daily_cost_totals_respects_filters(conn):
+    filters = {**ALL_FILTERS, "locations": ["Germany"]}
+    df = get_daily_cost_totals(conn, filters)
+    assert set(df["ds"].astype(str)) == {"2025-12-10"}

@@ -218,6 +218,15 @@ def get_avg_cost_per_session_over_time(conn, filters: dict) -> pd.DataFrame:
     """)
 
 
+def get_daily_cost_totals(conn, filters: dict) -> pd.DataFrame:
+    w = _where(filters, "ar.timestamp")
+    return _df(conn, f"""
+        SELECT CAST(ar.timestamp AS DATE) AS ds, COALESCE(SUM(ar.cost_usd), 0) AS y
+        FROM api_requests ar JOIN employees e ON ar.user_email = e.email {w}
+        GROUP BY 1 ORDER BY 1
+    """)
+
+
 def get_model_distribution(conn, filters: dict) -> pd.DataFrame:
     w = _where(filters, "ar.timestamp")
     return _df(conn, f"""

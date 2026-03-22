@@ -2,6 +2,7 @@ import os
 
 import numpy as np
 import streamlit as st
+import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
 import requests
@@ -31,6 +32,193 @@ def api_post(path: str, filters: dict):
     except requests.exceptions.Timeout:
         st.error(f"API request timed out for `{path}`.")
         st.stop()
+
+
+def fmt_optional_metric(value, kind: str = "number") -> str:
+    """Format optional KPI values while keeping missing values readable."""
+    if value is None or pd.isna(value):
+        return "N/A"
+
+    try:
+        numeric_value = float(value)
+    except (TypeError, ValueError):
+        return "N/A"
+
+    if kind == "currency":
+        return f"${numeric_value:,.2f}"
+    if kind == "percent":
+        return f"{numeric_value:.1%}" if abs(numeric_value) <= 1 else f"{numeric_value:.1f}%"
+    if kind == "integer":
+        return f"{numeric_value:,.0f}"
+    return f"{numeric_value:,.2f}"
+
+
+def normalize_forecast_frame(rows: list[dict]) -> pd.DataFrame:
+    """Normalize forecast-related API rows into a date-sorted DataFrame."""
+    if isinstance(rows, pd.DataFrame):
+        df = rows.copy()
+    elif isinstance(rows, (list, tuple)):
+        df = pd.DataFrame(rows)
+    else:
+        return pd.DataFrame()
+
+    if df.empty or "ds" not in df.columns:
+        return df
+    df = df.copy()
+    df["ds"] = pd.to_datetime(df["ds"], errors="coerce")
+    df = df[df["ds"].notna()]
+    if df.empty:
+        return df
+    return df.sort_values("ds")
+
+
+def build_forecast_figure(
+    history_df: pd.DataFrame,
+    forecast_df: pd.DataFrame,
+    anomalies_df: pd.DataFrame,
+) -> go.Figure | None:
+    has_history = not history_df.empty and {"ds", "y"}.issubset(history_df.columns)
+    has_forecast = not forecast_df.empty and {"ds", "yhat", "yhat_lower", "yhat_upper"}.issubset(forecast_df.columns)
+    has_anomalies = (
+        not anomalies_df.empty
+        and {"ds", "actual_cost", "expected_cost", "residual"}.issubset(anomalies_df.columns)
+    )
+
+    if has_history:
+        history_df = history_df.copy()
+        history_df["y"] = pd.to_numeric(history_df["y"], errors="coerce")
+        history_df = history_df.dropna(subset=["ds", "y"])
+        has_history = not history_df.empty
+
+    if has_forecast:
+        forecast_df = forecast_df.copy()
+        for col in ["yhat", "yhat_lower", "yhat_upper"]:
+            forecast_df[col] = pd.to_numeric(forecast_df[col], errors="coerce")
+        forecast_df = forecast_df.dropna(subset=["ds", "yhat", "yhat_lower", "yhat_upper"])
+        has_forecast = not forecast_df.empty
+
+    if has_anomalies:
+        anomalies_df = anomalies_df.copy()
+        for col in ["actual_cost", "expected_cost", "residual"]:
+            anomalies_df[col] = pd.to_numeric(anomalies_df[col], errors="coerce")
+        anomalies_df = anomalies_df.dropna(subset=["ds", "actual_cost", "expected_cost", "residual"])
+        has_anomalies = not anomalies_df.empty
+
+    if not any([has_history, has_forecast, has_anomalies]):
+        return None
+
+    fig = go.Figure()
+
+    if has_history:
+        fig.add_trace(
+            go.Scatter(
+                x=history_df["ds"],
+                y=history_df["y"],
+                mode="lines+markers",
+                name="Historical cost",
+                line=dict(color="#2563eb", width=2.5),
+                marker=dict(size=5),
+            )
+        )
+
+    if has_forecast:
+        fig.add_trace(
+            go.Scatter(
+                x=forecast_df["ds"],
+                y=forecast_df["yhat_upper"],
+                mode="lines",
+                line=dict(width=0),
+                showlegend=False,
+                hoverinfo="skip",
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=forecast_df["ds"],
+                y=forecast_df["yhat_lower"],
+                mode="lines",
+                line=dict(width=0),
+                fill="tonexty",
+                fillcolor="rgba(249, 115, 22, 0.18)",
+                name="Uncertainty band",
+                hoverinfo="skip",
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=forecast_df["ds"],
+                y=forecast_df["yhat"],
+                mode="lines",
+                name="Forecast",
+                line=dict(color="#d97706", width=3, dash="dash"),
+            )
+        )
+
+    if has_anomalies:
+        fig.add_trace(
+            go.Scatter(
+                x=anomalies_df["ds"],
+                y=anomalies_df["actual_cost"],
+                mode="markers",
+                name="Anomaly",
+                marker=dict(color="#dc2626", size=11, symbol="x"),
+                customdata=np.stack(
+                    [anomalies_df["expected_cost"], anomalies_df["residual"]], axis=-1
+                ),
+                hovertemplate=(
+                    "Date=%{x|%Y-%m-%d}<br>"
+                    "Actual=%{y:$,.2f}<br>"
+                    "Expected=%{customdata[0]:$,.2f}<br>"
+                    "Residual=%{customdata[1]:$,.2f}<extra></extra>"
+                ),
+            )
+        )
+
+    fig.update_layout(
+        title="Historical Cost, Forecast, and Anomalies",
+        template="plotly_white",
+        hovermode="x unified",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+        margin=dict(l=20, r=20, t=60, b=20),
+    )
+    fig.update_xaxes(title="Date")
+    fig.update_yaxes(title="Cost ($)", tickprefix="$", separatethousands=True)
+    return fig
+
+
+def render_anomaly_table(anomalies_df: pd.DataFrame) -> None:
+    required_cols = {"ds", "actual_cost", "expected_cost", "residual"}
+    if anomalies_df.empty:
+        st.info("No anomalies were flagged for the selected filters.")
+        return
+
+    if not required_cols.issubset(anomalies_df.columns):
+        st.warning("Anomaly details are unavailable for the current response payload.")
+        return
+
+    anomaly_table = anomalies_df.loc[:, ["ds", "actual_cost", "expected_cost", "residual"]].copy()
+    anomaly_table["ds"] = pd.to_datetime(anomaly_table["ds"], errors="coerce")
+    anomaly_table["actual_cost"] = pd.to_numeric(anomaly_table["actual_cost"], errors="coerce")
+    anomaly_table["expected_cost"] = pd.to_numeric(anomaly_table["expected_cost"], errors="coerce")
+    anomaly_table["residual"] = pd.to_numeric(anomaly_table["residual"], errors="coerce")
+    anomaly_table = anomaly_table.dropna()
+    if anomaly_table.empty:
+        st.warning("Anomaly details are unavailable for the current response payload.")
+        return
+
+    anomaly_table["ds"] = anomaly_table["ds"].dt.strftime("%Y-%m-%d")
+    anomaly_table["actual_cost"] = anomaly_table["actual_cost"].map(lambda v: f"${v:,.2f}")
+    anomaly_table["expected_cost"] = anomaly_table["expected_cost"].map(lambda v: f"${v:,.2f}")
+    anomaly_table["residual"] = anomaly_table["residual"].map(lambda v: f"${v:,.2f}")
+    anomaly_table = anomaly_table.rename(
+        columns={
+            "ds": "Date",
+            "actual_cost": "Actual Cost",
+            "expected_cost": "Expected Cost",
+            "residual": "Residual",
+        }
+    )
+    st.dataframe(anomaly_table, use_container_width=True, hide_index=True)
 
 
 st.set_page_config(page_title="Claude Code Analytics", layout="wide")
@@ -65,8 +253,16 @@ filters = {
 # ── Title ─────────────────────────────────────────────────────────────────────
 st.title("Claude Code Usage Analytics")
 
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
-    ["Overview", "Cost & Tokens", "Team & Engineers", "Activity Patterns", "Tool Behavior", "Session Intelligence"]
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(
+    [
+        "Overview",
+        "Cost & Tokens",
+        "Team & Engineers",
+        "Activity Patterns",
+        "Tool Behavior",
+        "Session Intelligence",
+        "Forecast & Anomalies",
+    ]
 )
 
 # ── Tab 1: Overview ───────────────────────────────────────────────────────────
@@ -317,3 +513,58 @@ with tab6:
                      title="Session Cost Distribution by Practice",
                      labels={"practice": "Practice", "total_cost": "Session Cost ($)"})
         st.plotly_chart(fig, use_container_width=True)
+
+# ── Tab 7: Forecast & Anomalies ───────────────────────────────────────────────
+with tab7:
+    st.markdown(
+        """
+        <div style="
+            padding: 1rem 1.1rem;
+            border-radius: 0.9rem;
+            border: 1px solid rgba(217, 119, 6, 0.45);
+            background: linear-gradient(90deg, rgba(251, 191, 36, 0.24), rgba(249, 115, 22, 0.10));
+            color: #7c2d12;
+            margin-bottom: 0.75rem;
+        ">
+            <div style="font-size: 1.08rem; font-weight: 700; color: #9a3412;">
+                Forecast & Anomalies
+            </div>
+            <div style="margin-top: 0.25rem;">
+                Review the forecasted daily cost, uncertainty range, and flagged anomalies for the selected filters.
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    forecast_summary = api_post("/api/v1/forecast/summary", filters)
+    status = forecast_summary.get("status", "ok")
+    message = forecast_summary.get("message")
+
+    if status == "insufficient_data":
+        st.warning(message or "Insufficient daily history to produce a forecast.")
+    elif status == "forecast_error":
+        st.error(message or "The forecast could not be generated for the selected filters.")
+    elif message:
+        st.info(message)
+
+    metrics = forecast_summary.get("metrics") or {}
+    metric_cols = st.columns(3)
+    metric_cols[0].metric("MAPE", fmt_optional_metric(metrics.get("mape"), "percent"))
+    metric_cols[1].metric("MAE", fmt_optional_metric(metrics.get("mae"), "currency"))
+    metric_cols[2].metric("Coverage", fmt_optional_metric(metrics.get("coverage"), "percent"))
+
+    st.caption("MAPE and coverage are shown as percentages; MAE is shown in cost units.")
+
+    history_df = normalize_forecast_frame(forecast_summary.get("history", []))
+    forecast_df = normalize_forecast_frame(forecast_summary.get("forecast", []))
+    anomalies_df = normalize_forecast_frame(forecast_summary.get("anomalies", []))
+
+    fig = build_forecast_figure(history_df, forecast_df, anomalies_df)
+    if fig is None:
+        st.info("No forecast data for the selected filters.")
+    else:
+        st.plotly_chart(fig, use_container_width=True)
+
+    st.subheader("Anomaly Table")
+    render_anomaly_table(anomalies_df)

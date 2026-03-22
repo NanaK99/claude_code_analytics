@@ -32,16 +32,15 @@ python ingest.py
 cp .env.sample .env
 # Edit .env — set API_KEY to any secret string (e.g. dev-key)
 
-# 4. Start the API server (keep running in a separate terminal)
-uvicorn api:app --reload
-
-# 5. Launch dashboard
-streamlit run app.py
+# 4. Start both FastAPI and Streamlit together
+bash run_dashboard.sh
 ```
+
+`run_dashboard.sh` launches `uvicorn api:app --reload` and `streamlit run app.py` together with the `provectus_task` conda environment, and it stops both processes when you exit the script. You can override ports with `API_PORT` and `STREAMLIT_PORT` if needed.
 
 ## Dashboard Overview
 
-The dashboard is organized into six tabs:
+The dashboard is organized into seven tabs:
 
 | Tab | Contents |
 |-----|----------|
@@ -51,6 +50,7 @@ The dashboard is organized into six tabs:
 | **Activity Patterns** | Hour × day-of-week heatmap, sessions by day of week, and a business hours vs. after-hours split |
 | **Tool Behavior** | Tool call frequency, accept/reject rates per tool, average execution times, and tool success rates |
 | **Session Intelligence** | Session duration distribution (log scale), API latency by model, error breakdown by status code, avg cost by seniority level, and session cost distribution by practice |
+| **Forecast & Anomalies** | Predictive analytics view with a 14-day cost forecast, confidence band, anomaly markers, and forecast quality metrics |
 
 ## Dependencies
 
@@ -67,6 +67,7 @@ The dashboard is organized into six tabs:
 | uvicorn | >=0.34.0 | ASGI server |
 | requests | >=2.32.0 | HTTP client for Streamlit → API calls |
 | python-dotenv | >=1.0.0 | `.env` file loading |
+| prophet | 1.3.0 | Time-series forecasting and anomaly baseline generation |
 
 ## Running Tests
 
@@ -74,7 +75,7 @@ The dashboard is organized into six tabs:
 pytest tests/ -v
 ```
 
-38 tests cover schema validation, the event parser, the ingest pipeline, and all query functions.
+85 tests cover schema validation, the event parser, the ingest pipeline, analytics queries, the FastAPI layer, and forecasting helpers.
 
 ## LLM Usage Log
 

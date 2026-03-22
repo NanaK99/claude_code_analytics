@@ -1,6 +1,7 @@
 import os
 import unittest.mock as mock
 import duckdb
+import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
@@ -163,6 +164,141 @@ def test_costs_cache_hit_rate_wraps_float(client):
     data = resp.json()
     assert "cache_hit_rate" in data
     assert 0.0 <= data["cache_hit_rate"] <= 1.0
+
+
+# ── Forecast router ──────────────────────────────────────────────────────────
+
+def test_forecast_summary_happy_path_shape(client, monkeypatch):
+    daily_costs = pd.DataFrame(
+        {
+            "ds": pd.to_datetime(["2025-12-10", "2025-12-11"]),
+            "y": [1.5, 2.0],
+        }
+    )
+    expected_filters = {
+        **VALID_FILTERS,
+        "date_start": pd.Timestamp(VALID_FILTERS["date_start"]).date(),
+        "date_end": pd.Timestamp(VALID_FILTERS["date_end"]).date(),
+    }
+    expected_summary = {
+        "status": "ok",
+        "message": None,
+        "history": [{"ds": "2025-12-10", "y": 1.5}, {"ds": "2025-12-11", "y": 2.0}],
+        "forecast": [
+            {
+                "ds": "2025-12-12",
+                "yhat": 2.1,
+                "yhat_lower": 1.8,
+                "yhat_upper": 2.4,
+            }
+        ],
+        "metrics": {"mae": 0.1, "mape": 0.05, "coverage": 0.9},
+        "anomalies": [
+            {
+                "ds": "2025-12-11",
+                "actual_cost": 2.0,
+                "expected_cost": 1.2,
+                "residual": 0.8,
+            }
+        ],
+    }
+
+    monkeypatch.setattr(
+        "src.api.routers.forecast.get_daily_cost_totals",
+        lambda db, filters: daily_costs,
+    )
+    def build_summary(df, periods=14, filters=None):
+        assert df.equals(daily_costs)
+        assert periods == 14
+        assert filters == expected_filters
+        return expected_summary
+
+    monkeypatch.setattr("src.api.routers.forecast.build_forecast_summary", build_summary)
+
+    resp = client.post("/api/v1/forecast/summary", json=VALID_FILTERS, headers=HEADERS)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "ok"
+    assert "history" in data and isinstance(data["history"], list)
+    assert "forecast" in data and isinstance(data["forecast"], list)
+    assert "metrics" in data
+    assert "anomalies" in data and isinstance(data["anomalies"], list)
+
+
+def test_forecast_summary_insufficient_data_shape(client, monkeypatch):
+    daily_costs = pd.DataFrame(
+        {
+            "ds": pd.to_datetime(["2025-12-10"]),
+            "y": [1.5],
+        }
+    )
+    expected_filters = {
+        **VALID_FILTERS,
+        "date_start": pd.Timestamp(VALID_FILTERS["date_start"]).date(),
+        "date_end": pd.Timestamp(VALID_FILTERS["date_end"]).date(),
+    }
+    expected_summary = {
+        "status": "insufficient_data",
+        "message": "At least 14 days of daily cost history are required for forecasting.",
+        "history": [{"ds": "2025-12-10", "y": 1.5}],
+        "forecast": [],
+        "metrics": None,
+        "anomalies": [],
+    }
+
+    monkeypatch.setattr(
+        "src.api.routers.forecast.get_daily_cost_totals",
+        lambda db, filters: daily_costs,
+    )
+    def build_summary(df, periods=14, filters=None):
+        assert df.equals(daily_costs)
+        assert periods == 14
+        assert filters == expected_filters
+        return expected_summary
+
+    monkeypatch.setattr("src.api.routers.forecast.build_forecast_summary", build_summary)
+
+    resp = client.post("/api/v1/forecast/summary", json=VALID_FILTERS, headers=HEADERS)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "insufficient_data"
+    assert isinstance(data["history"], list)
+    assert data["forecast"] == []
+    assert data["metrics"] is None
+    assert data["anomalies"] == []
+
+
+def test_forecast_summary_error_shape(client, monkeypatch):
+    daily_costs = pd.DataFrame(
+        {
+            "ds": pd.to_datetime(["2025-12-10", "2025-12-11"]),
+            "y": [1.5, 2.0],
+        }
+    )
+
+    monkeypatch.setattr(
+        "src.api.routers.forecast.get_daily_cost_totals",
+        lambda db, filters: daily_costs,
+    )
+    monkeypatch.setattr(
+        "src.forecasting.fit_prophet_and_predict",
+        lambda history, periods=14: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+
+    resp = client.post("/api/v1/forecast/summary", json=VALID_FILTERS, headers=HEADERS)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "forecast_error"
+    assert data["message"] == "Forecasting failed: boom"
+    assert data["forecast"] == []
+    assert data["metrics"] is None
+    assert data["anomalies"] == []
+    assert len(data["history"]) == 90
+
+
+def test_forecast_summary_requires_api_key(client):
+    resp = client.post("/api/v1/forecast/summary", json=VALID_FILTERS)
+    assert resp.status_code == 403
 
 
 # ── Team router ───────────────────────────────────────────────────────────────

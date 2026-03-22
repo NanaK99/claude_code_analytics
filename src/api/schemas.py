@@ -1,5 +1,5 @@
 import datetime
-from typing import Optional, List
+from typing import Optional, List, Literal
 from pydantic import BaseModel
 
 from src.queries import Filters
@@ -168,3 +168,39 @@ class ErrorBreakdownRow(BaseModel):
 class LevelCostCorrelationRow(BaseModel):
     level: str
     avg_cost_per_session: float
+
+
+# ── Forecast Summary ─────────────────────────────────────────────────────────
+
+class ForecastHistoryRow(BaseModel):
+    ds: datetime.date
+    y: float
+
+
+class ForecastRow(BaseModel):
+    ds: datetime.date
+    yhat: float
+    yhat_lower: float
+    yhat_upper: float
+
+
+class ForecastAnomalyRow(BaseModel):
+    ds: datetime.date
+    actual_cost: float
+    expected_cost: float
+    residual: float
+
+
+class ForecastMetrics(BaseModel):
+    mae: Optional[float] = None
+    mape: Optional[float] = None
+    coverage: Optional[float] = None
+
+
+class ForecastSummaryResponse(BaseModel):
+    status: Literal["ok", "insufficient_data", "forecast_error"]
+    message: Optional[str] = None
+    history: List[ForecastHistoryRow]
+    forecast: List[ForecastRow]
+    metrics: Optional[ForecastMetrics] = None
+    anomalies: List[ForecastAnomalyRow]

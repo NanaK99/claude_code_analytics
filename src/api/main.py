@@ -1,3 +1,4 @@
+import logging
 import os
 import duckdb
 from contextlib import asynccontextmanager
@@ -6,8 +7,9 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from src.api.routers import overview, costs, team, activity, tools, sessions
+from src.api.routers import overview, costs, team, activity, tools, sessions, forecast
 
+logger = logging.getLogger(__name__)
 DB_PATH = os.getenv("DB_PATH", "db/analytics.duckdb")
 
 
@@ -34,6 +36,7 @@ app = FastAPI(
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    logger.exception("Unhandled API exception", exc_info=exc)
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 
@@ -44,3 +47,4 @@ app.include_router(team.router, prefix="/api/v1")
 app.include_router(activity.router, prefix="/api/v1")
 app.include_router(tools.router, prefix="/api/v1")
 app.include_router(sessions.router, prefix="/api/v1")
+app.include_router(forecast.router, prefix="/api/v1")

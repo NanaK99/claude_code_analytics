@@ -247,3 +247,54 @@ Count of API errors grouped by HTTP status code.
 Average cost per session for each seniority level.
 
 **Response:** `[{"level": "L1", "avg_cost_per_session": 0.18}, ...]`
+
+---
+
+### Forecast — `/api/v1/forecast`
+
+#### `POST /summary`
+Returns normalized daily cost history, a 14-day forecast, optional cross-validation metrics, and detected anomalies.
+
+**Response:**
+```json
+{
+  "status": "ok",
+  "message": null,
+  "history": [
+    {"ds": "2025-12-10", "y": 1.5},
+    {"ds": "2025-12-11", "y": 2.0}
+  ],
+  "forecast": [
+    {
+      "ds": "2025-12-12",
+      "yhat": 2.1,
+      "yhat_lower": 1.8,
+      "yhat_upper": 2.4
+    }
+  ],
+  "metrics": {
+    "mae": 0.12,
+    "mape": 0.08,
+    "coverage": 0.91
+  },
+  "anomalies": [
+    {
+      "ds": "2025-12-11",
+      "actual_cost": 2.0,
+      "expected_cost": 1.2,
+      "residual": 0.8
+    }
+  ]
+}
+```
+
+`status` values:
+- `ok` — forecast generated successfully
+- `insufficient_data` — not enough daily history to forecast
+- `forecast_error` — the forecast pipeline failed for the current data slice
+
+Notes:
+- `history` is normalized to daily cadence for the selected date range
+- `forecast` contains only forward-looking rows
+- `metrics` may be `null` when there is enough history to forecast but not enough for cross-validation
+- `anomalies` are based on residuals between actual cost and in-sample expected cost
