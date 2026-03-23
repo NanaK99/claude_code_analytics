@@ -38,6 +38,26 @@ bash run_dashboard.sh
 
 `run_dashboard.sh` launches `uvicorn api:app --reload` and `streamlit run app.py` together with the `provectus_task` conda environment, and it stops both processes when you exit the script. You can override ports with `API_PORT` and `STREAMLIT_PORT` if needed.
 
+Default host/port values:
+
+- FastAPI: `http://127.0.0.1:8000`
+- Streamlit: `http://127.0.0.1:8501`
+
+To override the ports for a single run:
+
+```bash
+API_PORT=8001 STREAMLIT_PORT=8502 bash run_dashboard.sh
+```
+
+To make the override persistent for your local setup, add the values to `.env`:
+
+```bash
+API_PORT=8001
+STREAMLIT_PORT=8502
+```
+
+`run_dashboard.sh` loads `.env` before starting both services, so those values will be picked up automatically on the next launch.
+
 ## Dashboard Overview
 
 The dashboard is organized into seven tabs:
@@ -79,14 +99,8 @@ pytest tests/ -v
 
 ## LLM Usage Log
 
-Claude Code (`claude-sonnet-4-6`) was used throughout this project to design the architecture, write implementation plans, and implement all code via a subagent-driven development workflow.
+See the standalone log: [LLM_USAGE_LOG.md](./LLM_USAGE_LOG.md)
 
-Example prompts used during development:
+## Presentation
 
-- "Design a local analytics platform for Claude Code telemetry data using DuckDB and Streamlit"
-- "Implement chunked insertion into DuckDB with per-buffer flushing at CHUNK_SIZE=10,000"
-- "Write analytics query functions for a 6-tab Streamlit dashboard with sidebar filters"
-- "Build a FastAPI backend with 26 endpoints wrapping the DuckDB query layer"
-- "Migrate app.py to consume the FastAPI backend via HTTP instead of querying DuckDB directly"
-
-All generated code was validated through automated test suites (38 tests), spec compliance reviews, code quality reviews, and manual verification against the real 454K-event dataset.
+Presentation link: [Claude_Code_Analytics_Insights.pdf](./Claude_Code_Analytics_Insights.pdf)
