@@ -141,6 +141,19 @@ def test_get_cost_by_level_over_time(conn):
     assert len(df) > 0
 
 
+def test_get_cost_by_level_over_time_orders_levels_numerically(conn):
+    conn.execute("INSERT INTO employees VALUES ('cara@example.com','Cara','ML Engineering','L10','Canada')")
+    conn.execute(
+        """INSERT INTO api_requests VALUES
+        ('s3','cara@example.com','2025-12-12 09:00:00','claude-sonnet-4-6',10,20,0,0,0.02,1000,'vscode')
+    """
+    )
+
+    df = get_cost_by_level_over_time(conn, ALL_FILTERS)
+
+    assert df["level"].tolist() == ["L3", "L5", "L10"]
+
+
 def test_get_token_breakdown(conn):
     df = get_token_breakdown(conn, ALL_FILTERS)
     assert list(df["token_type"]) == ["Input", "Output", "Cache Read", "Cache Creation"]
@@ -181,6 +194,15 @@ def test_get_usage_by_level(conn):
     df = get_usage_by_level(conn, ALL_FILTERS)
     assert set(df.columns) >= {"level", "session_count"}
     assert set(df["level"]) <= {"L5", "L3"}
+
+
+def test_get_usage_by_level_orders_levels_numerically(conn):
+    conn.execute("INSERT INTO employees VALUES ('cara@example.com','Cara','ML Engineering','L10','Canada')")
+    conn.execute("INSERT INTO user_prompts VALUES ('s3','cara@example.com','2025-12-12 09:00:00',250,'vscode')")
+
+    df = get_usage_by_level(conn, ALL_FILTERS)
+
+    assert df["level"].tolist() == ["L3", "L5", "L10"]
 
 
 def test_get_usage_by_location(conn):
@@ -359,6 +381,20 @@ def test_get_level_cost_correlation(conn):
     # alice is L5, s1 cost=0.011, 1 session → avg=0.011
     l5_row = df[df["level"] == "L5"].iloc[0]
     assert l5_row["avg_cost_per_session"] == pytest.approx(0.011, rel=1e-3)
+
+
+def test_get_level_cost_correlation_orders_levels_numerically(conn):
+    conn.execute("INSERT INTO employees VALUES ('cara@example.com','Cara','ML Engineering','L10','Canada')")
+    conn.execute("INSERT INTO user_prompts VALUES ('s3','cara@example.com','2025-12-12 09:00:00',250,'vscode')")
+    conn.execute(
+        """INSERT INTO api_requests VALUES
+        ('s3','cara@example.com','2025-12-12 09:00:00','claude-sonnet-4-6',10,20,0,0,0.02,1000,'vscode')
+    """
+    )
+
+    df = get_level_cost_correlation(conn, ALL_FILTERS)
+
+    assert df["level"].tolist() == ["L3", "L5", "L10"]
 
 def test_get_daily_cost_totals(conn):
     df = get_daily_cost_totals(conn, ALL_FILTERS)

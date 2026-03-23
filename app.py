@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 load_dotenv()
 _API_URL = os.environ.get("API_URL", "http://localhost:8000")
 _API_KEY = os.environ.get("API_KEY", "")
+LEVEL_ORDER = [f"L{i}" for i in range(1, 11)]
 
 
 def api_post(path: str, filters: dict):
@@ -70,6 +71,21 @@ def normalize_forecast_frame(rows: list[dict]) -> pd.DataFrame:
     if df.empty:
         return df
     return df.sort_values("ds")
+
+
+def sort_status_codes(values: pd.Series) -> list[str]:
+    """Sort numeric HTTP status codes naturally and place non-numeric labels last."""
+    labels = [str(value) for value in values.dropna().unique()]
+
+    def sort_key(label: str) -> tuple[int, int, str]:
+        if label.isdigit():
+            return (0, int(label), label)
+        if label.lower() == "unknown":
+            return (2, 0, label)
+        digits = "".join(ch for ch in label if ch.isdigit())
+        return (1, int(digits) if digits else 0, label)
+
+    return sorted(labels, key=sort_key)
 
 
 def build_forecast_figure(
@@ -344,7 +360,8 @@ with tab2:
         df_level = pd.DataFrame(api_post("/api/v1/costs/by-level", filters))
         if not df_level.empty:
             fig = px.line(df_level, x="date", y="total_cost", color="level",
-                          title="Daily Cost by Seniority Level")
+                          title="Daily Cost by Seniority Level",
+                          category_orders={"level": LEVEL_ORDER})
             st.plotly_chart(fig, use_container_width=True)
 
         df_avg_cost = pd.DataFrame(api_post("/api/v1/costs/avg-cost-trend", filters))
@@ -361,11 +378,16 @@ with tab2:
         st.metric("~Cache Savings (est.)", f"${savings:,.2f}",
                   help="Estimated savings from prompt caching vs. no-cache baseline. Based on Sonnet 4.6 pricing applied to all models.")
 
-        df_model = pd.DataFrame(api_post("/api/v1/costs/model-distribution", filters))
-        if not df_model.empty:
-            fig = px.pie(df_model, names="model", values="call_count",
-                         title="Model Distribution")
-            st.plotly_chart(fig, use_container_width=True)
+    df_model = pd.DataFrame(api_post("/api/v1/costs/model-distribution", filters))
+    if not df_model.empty:
+        fig = px.pie(df_model, names="model", values="call_count", title="Model Distribution", hole=0.35)
+        fig.update_traces(textposition="inside", textinfo="percent")
+        fig.update_layout(
+            height=460,
+            legend=dict(yanchor="middle", y=0.5, xanchor="left", x=1.02),
+            margin=dict(l=20, r=180, t=60, b=20),
+        )
+        st.plotly_chart(fig, use_container_width=True)
 
     df_tokens = pd.DataFrame(api_post("/api/v1/costs/token-breakdown", filters))
     if not df_tokens.empty:
@@ -395,7 +417,8 @@ with tab3:
         df_level = pd.DataFrame(api_post("/api/v1/team/by-level", filters))
         if not df_level.empty:
             fig = px.bar(df_level, x="level", y="session_count",
-                         title="Sessions by Seniority Level")
+                         title="Sessions by Seniority Level",
+                         category_orders={"level": LEVEL_ORDER})
             st.plotly_chart(fig, use_container_width=True)
 
     st.subheader("Top 10 Engineers by Session Count")
@@ -531,16 +554,22 @@ with tab6:
     with col_right:
         df_err = pd.DataFrame(api_post("/api/v1/sessions/error-breakdown", filters))
         if not df_err.empty:
+            df_err = df_err.copy()
+            df_err["status_code"] = df_err["status_code"].astype(str)
+            status_code_order = sort_status_codes(df_err["status_code"])
             fig = px.bar(df_err, x="status_code", y="count",
                          title="API Errors by Status Code",
-                         labels={"status_code": "Status Code", "count": "Error Count"})
+                         labels={"status_code": "Status Code", "count": "Error Count"},
+                         category_orders={"status_code": status_code_order})
+            fig.update_xaxes(type="category")
             st.plotly_chart(fig, use_container_width=True)
 
         df_level_cost = pd.DataFrame(api_post("/api/v1/sessions/level-cost-correlation", filters))
         if not df_level_cost.empty:
             fig = px.bar(df_level_cost, x="level", y="avg_cost_per_session",
                          title="Avg Cost per Session by Seniority Level",
-                         labels={"level": "Level", "avg_cost_per_session": "Avg Cost / Session ($)"})
+                         labels={"level": "Level", "avg_cost_per_session": "Avg Cost / Session ($)"},
+                         category_orders={"level": LEVEL_ORDER})
             st.plotly_chart(fig, use_container_width=True)
 
     st.subheader("Session Cost by Practice")

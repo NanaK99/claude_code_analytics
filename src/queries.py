@@ -9,6 +9,7 @@ _VALID_PRACTICES = {
 }
 _VALID_LEVELS    = {f"L{i}" for i in range(1, 11)}
 _VALID_LOCATIONS = {"United States", "Germany", "United Kingdom", "Poland", "Canada"}
+_LEVEL_SORT_SQL  = "CAST(SUBSTR(e.level, 2) AS INTEGER)"
 
 
 class Filters(BaseModel):
@@ -182,7 +183,7 @@ def get_cost_by_level_over_time(conn, filters: dict) -> pd.DataFrame:
     return _df(conn, f"""
         SELECT CAST(ar.timestamp AS DATE) AS date, e.level, SUM(ar.cost_usd) AS total_cost
         FROM api_requests ar JOIN employees e ON ar.user_email = e.email {w}
-        GROUP BY 1, 2 ORDER BY 1, 2
+        GROUP BY 1, 2 ORDER BY {_LEVEL_SORT_SQL}, 1
     """)
 
 
@@ -269,7 +270,7 @@ def get_usage_by_level(conn, filters: dict) -> pd.DataFrame:
     return _df(conn, f"""
         SELECT e.level, COUNT(DISTINCT up.session_id) AS session_count
         FROM user_prompts up JOIN employees e ON up.user_email = e.email {w}
-        GROUP BY e.level ORDER BY e.level
+        GROUP BY e.level ORDER BY {_LEVEL_SORT_SQL}
     """)
 
 
@@ -444,5 +445,5 @@ def get_level_cost_correlation(conn, filters: dict) -> pd.DataFrame:
         JOIN employees e ON up.user_email = e.email
         LEFT JOIN sc ON up.session_id = sc.session_id
         {w}
-        GROUP BY e.level ORDER BY e.level
+        GROUP BY e.level ORDER BY {_LEVEL_SORT_SQL}
     """)
